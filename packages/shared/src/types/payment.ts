@@ -13,10 +13,13 @@ export type PaymentMethod =
   | 'boleto'
   | 'bank_transfer';
 
+export type PaymentType = 'purchase' | 'renewal' | 'refund';
+
 export type Payment = {
   id: string;
   subscriptionId: string;
   customerId: string;
+  type: PaymentType;
   amount: number;
   currency: string;
   status: PaymentStatus;
@@ -33,6 +36,7 @@ export type Payment = {
 export type CreatePaymentDto = {
   subscriptionId: string;
   customerId: string;
+  type: PaymentType;
   amount: number;
   currency?: string;
   method?: PaymentMethod;

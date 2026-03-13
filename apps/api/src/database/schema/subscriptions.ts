@@ -1,15 +1,19 @@
-import { pgTable, uuid, varchar, timestamp, numeric, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, numeric, jsonb, boolean } from 'drizzle-orm/pg-core';
 import { customers } from './customers';
+import { products } from './products';
 
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
   customerId: uuid('customer_id').notNull().references(() => customers.id),
-  planId: varchar('plan_id', { length: 255 }).notNull(),
-  planName: varchar('plan_name', { length: 255 }).notNull(),
+  productId: uuid('product_id').notNull().references(() => products.id),
   status: varchar('status', { length: 50 }).notNull().default('pending'),
+  accessType: varchar('access_type', { length: 20 }).notNull().default('paid'),
+  accessGranted: boolean('access_granted').notNull().default(false),
   startDate: timestamp('start_date').notNull(),
   endDate: timestamp('end_date'),
   trialEndDate: timestamp('trial_end_date'),
+  revokedAt: timestamp('revoked_at'),
+  cancelledAt: timestamp('cancelled_at'),
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
   currency: varchar('currency', { length: 10 }).notNull().default('BRL'),
   billingCycle: varchar('billing_cycle', { length: 50 }).notNull(),
