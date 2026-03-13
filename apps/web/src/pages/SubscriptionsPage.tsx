@@ -1,5 +1,6 @@
 import React from 'react';
 import { useQuery } from 'react-query';
+import type { Subscription } from '@brabogm/shared';
 import { api } from '../lib/api';
 import Table from '../components/Table';
 import StatusBadge from '../components/StatusBadge';
@@ -16,14 +17,14 @@ export default function SubscriptionsPage() {
     {
       key: 'amount',
       header: 'Amount',
-      render: (row: any) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
+      render: (row: Subscription) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
     },
     { key: 'billingCycle', header: 'Cycle' },
-    { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.status} /> },
+    { key: 'status', header: 'Status', render: (row: Subscription) => <StatusBadge status={row.status} /> },
     {
       key: 'startDate',
       header: 'Start Date',
-      render: (row: any) => new Date(row.startDate).toLocaleDateString(),
+      render: (row: Subscription) => new Date(row.startDate).toLocaleDateString(),
     },
   ];
 

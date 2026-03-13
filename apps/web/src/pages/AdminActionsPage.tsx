@@ -27,7 +27,7 @@ export default function AdminActionsPage() {
   );
 
   const mutation = useMutation(
-    (payload: any) => api.post('/admin-actions', payload).then((r) => r.data),
+    (payload: typeof form) => api.post('/admin-actions', payload).then((r) => r.data),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('admin-actions');

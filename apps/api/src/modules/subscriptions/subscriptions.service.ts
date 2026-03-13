@@ -50,15 +50,13 @@ export class SubscriptionsService {
 
   async update(id: string, dto: UpdateSubscriptionDto) {
     await this.findOne(id);
+    const updateData: Record<string, unknown> = { ...dto, updatedAt: new Date() };
+    if (dto.startDate !== undefined) updateData.startDate = new Date(dto.startDate);
+    if (dto.endDate !== undefined) updateData.endDate = new Date(dto.endDate);
+    if (dto.trialEndDate !== undefined) updateData.trialEndDate = new Date(dto.trialEndDate);
     const [updated] = await this.db
       .update(subscriptions)
-      .set({
-        ...dto,
-        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
-        trialEndDate: dto.trialEndDate ? new Date(dto.trialEndDate) : undefined,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(subscriptions.id, id))
       .returning();
     return updated;
