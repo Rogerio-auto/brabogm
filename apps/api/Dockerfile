@@ -33,6 +33,9 @@ COPY apps/api/package.json ./apps/api/
 # Install production deps only
 RUN npm ci --omit=dev
 
+# Install drizzle-kit for runtime schema push (needed by entrypoint)
+RUN cd apps/api && npm install drizzle-kit@^0.20.9 --no-save
+
 # Copy built shared package (needed at runtime for type references)
 COPY --from=builder /app/packages/shared ./packages/shared
 
