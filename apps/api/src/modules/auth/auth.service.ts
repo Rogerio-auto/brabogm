@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject, OnModuleInit, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
@@ -6,11 +6,17 @@ import { DATABASE_CONNECTION } from '../../database/database.module';
 import { users } from '../../database/schema';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: any,
     private readonly jwtService: JwtService,
   ) {}
+
+  async onModuleInit() {
+    await this.seedDefaultAdmin();
+  }
 
   async validateUser(email: string, password: string) {
     const [user] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -56,6 +62,7 @@ export class AuthService {
         passwordHash: hash,
         role: 'admin',
       });
+      this.logger.log('Default admin user created (admin@brabogm.com)');
     }
   }
 }
