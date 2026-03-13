@@ -1,0 +1,115 @@
+version: "3.8"
+
+services:
+  # ========================================================================
+  # BRABOGM API (NestJS)
+  # ========================================================================
+  api:
+    image: ${DOCKER_REGISTRY:-}brabogm-api:${APP_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${PG_USER:-postgres}:${PG_PASS}@postgres_postgres:5432/${PG_DB_BRABOGM:-brabogm}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: https://${DOMAIN_WEB}
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.brabogm_api.rule=Host(`${DOMAIN_WEB}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.brabogm_api.entrypoints=websecure"
+        - "traefik.http.routers.brabogm_api.tls.certresolver=letsencrypt"
+        - "traefik.http.services.brabogm_api.loadbalancer.server.port=3001"
+        - "traefik.http.routers.brabogm_api.service=brabogm_api"
+
+  # ========================================================================
+  # BRABOGM WEB (React + Nginx)
+  # ========================================================================
+  web:
+    image: ${DOCKER_REGISTRY:-}brabogm-web:${APP_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.brabogm_web.rule=Host(`${DOMAIN_WEB}`)"
+        - "traefik.http.routers.brabogm_web.entrypoints=websecure"
+        - "traefik.http.routers.brabogm_web.tls.certresolver=letsencrypt"
+        - "traefik.http.services.brabogm_web.loadbalancer.server.port=80"
+        - "traefik.http.routers.brabogm_web.service=brabogm_web"
+        # Prioridade menor que a API para que /api vá para a API
+        - "traefik.http.routers.brabogm_web.priority=1"
+
+  # ========================================================================
+  # PGADMIN (Gerenciamento de PostgreSQL)
+  # ========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@brabogm.cloud}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.pgadmin.rule=Host(`${DOMAIN_PGADMIN}`)"
+        - "traefik.http.routers.pgadmin.entrypoints=websecure"
+        - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+        - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+        - "traefik.http.routers.pgadmin.service=pgadmin"
+
+volumes:
+  pgadmin_data:
+    driver: local
+
+networks:
+  network_public:
+    external: true

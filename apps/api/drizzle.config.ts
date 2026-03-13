@@ -7,4 +7,6 @@ export default {
   dbCredentials: {
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/brabogm',
   },
+  verbose: true,
+  strict: false,
 } satisfies Config;
