@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, numeric, jsonb, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, numeric, jsonb, boolean, index } from 'drizzle-orm/pg-core';
 import { customers } from './customers';
 import { products } from './products';
 
@@ -21,7 +21,11 @@ export const subscriptions = pgTable('subscriptions', {
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  customerIdIdx: index('idx_subscriptions_customer_id').on(table.customerId),
+  statusIdx: index('idx_subscriptions_status').on(table.status),
+  endDateIdx: index('idx_subscriptions_end_date').on(table.endDate),
+}));
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;

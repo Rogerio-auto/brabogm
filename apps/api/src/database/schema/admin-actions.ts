@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, jsonb, text } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, jsonb, text, index } from 'drizzle-orm/pg-core';
 
 export const adminActions = pgTable('admin_actions', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -13,7 +13,9 @@ export const adminActions = pgTable('admin_actions', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  adminIdIdx: index('idx_admin_actions_admin_id').on(table.adminId),
+}));
 
 export type AdminAction = typeof adminActions.$inferSelect;
 export type NewAdminAction = typeof adminActions.$inferInsert;

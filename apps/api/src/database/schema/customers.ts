@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 import { affiliates } from './affiliates';
 
 export const customers = pgTable('customers', {
@@ -12,7 +12,9 @@ export const customers = pgTable('customers', {
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  affiliateIdIdx: index('idx_customers_affiliate_id').on(table.affiliateId),
+}));
 
 export type Customer = typeof customers.$inferSelect;
 export type NewCustomer = typeof customers.$inferInsert;

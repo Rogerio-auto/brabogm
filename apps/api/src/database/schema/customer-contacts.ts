@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, index } from 'drizzle-orm/pg-core';
 import { customers } from './customers';
 
 export const customerContacts = pgTable('customer_contacts', {
@@ -10,7 +10,9 @@ export const customerContacts = pgTable('customer_contacts', {
   displayName: varchar('display_name', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  customerIdIdx: index('idx_customer_contacts_customer_id').on(table.customerId),
+}));
 
 export type CustomerContact = typeof customerContacts.$inferSelect;
 export type NewCustomerContact = typeof customerContacts.$inferInsert;
