@@ -11,6 +11,10 @@ export class CreatePaymentDto {
   customerId: string;
 
   @ApiProperty()
+  @IsIn(['purchase', 'renewal', 'refund'])
+  type: string;
+
+  @ApiProperty()
   @IsNumber()
   amount: number;
 

@@ -13,12 +13,12 @@ export class CreateCustomerDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
-  phone?: string;
+  document?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
-  document?: string;
+  affiliateId?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

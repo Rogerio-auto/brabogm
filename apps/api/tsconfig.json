@@ -5,6 +5,7 @@
     "target": "ES2020",
     "outDir": "./dist",
     "rootDir": "./src",
+    "strictPropertyInitialization": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "paths": {

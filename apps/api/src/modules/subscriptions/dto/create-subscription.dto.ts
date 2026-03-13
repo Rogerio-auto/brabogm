@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsDateString, IsIn } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsDateString, IsIn, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateSubscriptionDto {
@@ -8,11 +8,7 @@ export class CreateSubscriptionDto {
 
   @ApiProperty()
   @IsString()
-  planId: string;
-
-  @ApiProperty()
-  @IsString()
-  planName: string;
+  productId: string;
 
   @ApiProperty()
   @IsNumber()
@@ -40,6 +36,16 @@ export class CreateSubscriptionDto {
   @IsOptional()
   @IsDateString()
   trialEndDate?: string;
+
+  @ApiProperty({ required: false, default: 'paid' })
+  @IsOptional()
+  @IsIn(['paid', 'free', 'partner', 'test'])
+  accessType?: string;
+
+  @ApiProperty({ required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  accessGranted?: boolean;
 
   @ApiProperty({ required: false })
   @IsOptional()
