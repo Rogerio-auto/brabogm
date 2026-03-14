@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
+import { DatabaseInitService } from './database-init.service';
 
 export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
 
@@ -19,6 +20,7 @@ export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
         return drizzle(pool, { schema });
       },
     },
+    DatabaseInitService,
   ],
   exports: [DATABASE_CONNECTION],
 })

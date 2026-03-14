@@ -15,7 +15,11 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.seedDefaultAdmin();
+    try {
+      await this.seedDefaultAdmin();
+    } catch (error: any) {
+      this.logger.warn('Could not seed default admin (tables may not be ready yet)', error.message);
+    }
   }
 
   async validateUser(email: string, password: string) {
