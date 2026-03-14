@@ -1,7 +1,7 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, desc, count, ilike, or, and, gte, lte, SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
-import { subscriptions } from '../../database/schema';
+import { subscriptions, customers } from '../../database/schema';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
@@ -9,13 +9,85 @@ import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 export class SubscriptionsService {
   constructor(@Inject(DATABASE_CONNECTION) private readonly db: any) {}
 
-  async findAll(params: { page: number; limit: number }) {
-    const { page, limit } = params;
+  async findAll(params: {
+    page: number;
+    limit: number;
+    search?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    const { page, limit, search, status, dateFrom, dateTo } = params;
     const offset = (page - 1) * limit;
 
+    const conditions: SQL[] = [];
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(customers.name, `%${search}%`),
+          ilike(customers.email, `%${search}%`),
+          ilike(customers.document, `%${search}%`),
+        )!,
+      );
+    }
+
+    if (status) {
+      conditions.push(eq(subscriptions.status, status));
+    }
+
+    if (dateFrom) {
+      conditions.push(gte(subscriptions.createdAt, new Date(dateFrom)));
+    }
+
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(subscriptions.createdAt, end));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const baseSelect = {
+      id: subscriptions.id,
+      customerId: subscriptions.customerId,
+      productId: subscriptions.productId,
+      status: subscriptions.status,
+      accessType: subscriptions.accessType,
+      accessGranted: subscriptions.accessGranted,
+      startDate: subscriptions.startDate,
+      endDate: subscriptions.endDate,
+      trialEndDate: subscriptions.trialEndDate,
+      revokedAt: subscriptions.revokedAt,
+      cancelledAt: subscriptions.cancelledAt,
+      amount: subscriptions.amount,
+      currency: subscriptions.currency,
+      billingCycle: subscriptions.billingCycle,
+      externalId: subscriptions.externalId,
+      metadata: subscriptions.metadata,
+      createdAt: subscriptions.createdAt,
+      updatedAt: subscriptions.updatedAt,
+      customerName: customers.name,
+      customerEmail: customers.email,
+      customerDocument: customers.document,
+    };
+
+    const joinedQuery = this.db
+      .select(baseSelect)
+      .from(subscriptions)
+      .leftJoin(customers, eq(subscriptions.customerId, customers.id));
+
+    const countQuery = this.db
+      .select({ value: count() })
+      .from(subscriptions)
+      .leftJoin(customers, eq(subscriptions.customerId, customers.id));
+
+    const dataQuery = where ? joinedQuery.where(where) : joinedQuery;
+    const totalQuery = where ? countQuery.where(where) : countQuery;
+
     const [data, totalResult] = await Promise.all([
-      this.db.select().from(subscriptions).orderBy(desc(subscriptions.createdAt)).limit(limit).offset(offset),
-      this.db.select({ value: count() }).from(subscriptions),
+      dataQuery.orderBy(desc(subscriptions.createdAt)).limit(limit).offset(offset),
+      totalQuery,
     ]);
 
     const total = totalResult[0]?.value ?? 0;

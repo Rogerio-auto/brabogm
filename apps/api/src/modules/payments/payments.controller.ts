@@ -22,8 +22,24 @@ export class PaymentsController {
 
   @Get()
   @ApiOperation({ summary: 'List all payments' })
-  findAll(@Query('page') page = 1, @Query('limit') limit = 20) {
-    return this.paymentsService.findAll({ page: +page, limit: +limit });
+  findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('method') method?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.paymentsService.findAll({
+      page: +page,
+      limit: +limit,
+      search,
+      status,
+      method,
+      dateFrom,
+      dateTo,
+    });
   }
 
   @Get(':id')
