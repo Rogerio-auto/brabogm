@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, desc, count, ilike, or, and, gte, lte, SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
 import { customers } from '../../database/schema';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -9,13 +9,56 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 export class CustomersService {
   constructor(@Inject(DATABASE_CONNECTION) private readonly db: any) {}
 
-  async findAll(params: { page: number; limit: number }) {
-    const { page, limit } = params;
+  async findAll(params: {
+    page: number;
+    limit: number;
+    search?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    const { page, limit, search, status, dateFrom, dateTo } = params;
     const offset = (page - 1) * limit;
 
+    const conditions: SQL[] = [];
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(customers.name, `%${search}%`),
+          ilike(customers.email, `%${search}%`),
+          ilike(customers.document, `%${search}%`),
+        )!,
+      );
+    }
+
+    if (status) {
+      conditions.push(eq(customers.status, status));
+    }
+
+    if (dateFrom) {
+      conditions.push(gte(customers.createdAt, new Date(dateFrom)));
+    }
+
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(customers.createdAt, end));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const baseQuery = where
+      ? this.db.select().from(customers).where(where)
+      : this.db.select().from(customers);
+
+    const countQuery = where
+      ? this.db.select({ value: count() }).from(customers).where(where)
+      : this.db.select({ value: count() }).from(customers);
+
     const [data, totalResult] = await Promise.all([
-      this.db.select().from(customers).orderBy(desc(customers.createdAt)).limit(limit).offset(offset),
-      this.db.select({ value: count() }).from(customers),
+      baseQuery.orderBy(desc(customers.createdAt)).limit(limit).offset(offset),
+      countQuery,
     ]);
 
     const total = totalResult[0]?.value ?? 0;

@@ -24,8 +24,22 @@ export class CustomersController {
 
   @Get()
   @ApiOperation({ summary: 'List all customers' })
-  findAll(@Query('page') page = 1, @Query('limit') limit = 20) {
-    return this.customersService.findAll({ page: +page, limit: +limit });
+  findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.customersService.findAll({
+      page: +page,
+      limit: +limit,
+      search,
+      status,
+      dateFrom,
+      dateTo,
+    });
   }
 
   @Get(':id')

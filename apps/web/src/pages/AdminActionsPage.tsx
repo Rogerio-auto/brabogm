@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
-import { Plus } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 
 const ACTION_TYPES = [
   { value: 'cancel_subscription', label: 'Cancelar Assinatura' },
@@ -17,6 +17,99 @@ const ACTION_TYPES = [
   { value: 'manual_renewal', label: 'Renovação Manual' },
   { value: 'change_plan', label: 'Trocar Plano' },
 ];
+
+function CustomerSearch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string, label: string) => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [open, setOpen] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState('');
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const { data } = useQuery(
+    ['customers-search', searchTerm],
+    () => api.get(`/customers?limit=20&search=${encodeURIComponent(searchTerm)}`).then((r) => r.data),
+    { enabled: open && searchTerm.length >= 1, keepPreviousData: true },
+  );
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const customers = data?.data ?? [];
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      {value && selectedLabel ? (
+        <div className="flex items-center gap-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50">
+          <span className="flex-1 truncate">{selectedLabel}</span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange('', '');
+              setSelectedLabel('');
+              setSearchTerm('');
+            }}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder="Buscar por nome, e-mail ou documento..."
+            className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm"
+          />
+        </div>
+      )}
+      {open && !value && customers.length > 0 && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {customers.map((c: any) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                const label = `${c.name} — ${c.email}`;
+                onChange(c.id, label);
+                setSelectedLabel(label);
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0"
+            >
+              <span className="font-medium text-gray-800">{c.name}</span>
+              <span className="text-gray-400 ml-2 text-xs">{c.email}</span>
+              {c.document && <span className="text-gray-400 ml-2 text-xs">· {c.document}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && !value && searchTerm.length >= 1 && customers.length === 0 && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-3 text-sm text-gray-400">
+          Nenhum cliente encontrado
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminActionsPage() {
   const queryClient = useQueryClient();
@@ -83,13 +176,10 @@ export default function AdminActionsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ID do Cliente</label>
-              <input
-                type="text"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+              <CustomerSearch
                 value={form.customerId}
-                onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-                placeholder="Opcional"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                onChange={(id) => setForm({ ...form, customerId: id })}
               />
             </div>
             <div>
