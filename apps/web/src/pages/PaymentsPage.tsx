@@ -1,6 +1,5 @@
 import React from 'react';
 import { useQuery } from 'react-query';
-import type { Payment } from '@brabogm/shared';
 import { api } from '../lib/api';
 import Table from '../components/Table';
 import StatusBadge from '../components/StatusBadge';
@@ -12,29 +11,29 @@ export default function PaymentsPage() {
   );
 
   const columns = [
-    { key: 'subscriptionId', header: 'Subscription ID' },
+    { key: 'subscriptionId', header: 'ID da Assinatura' },
     {
       key: 'amount',
-      header: 'Amount',
-      render: (row: Payment) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
+      header: 'Valor',
+      render: (row: any) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
     },
-    { key: 'method', header: 'Method', render: (row: Payment) => row.method || '—' },
-    { key: 'status', header: 'Status', render: (row: Payment) => <StatusBadge status={row.status} /> },
+    { key: 'method', header: 'Método', render: (row: any) => row.method || '—' },
+    { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.status} /> },
     {
       key: 'paidAt',
-      header: 'Paid At',
-      render: (row: Payment) => (row.paidAt ? new Date(row.paidAt).toLocaleDateString() : '—'),
+      header: 'Pago em',
+      render: (row: any) => (row.paidAt ? new Date(row.paidAt).toLocaleDateString('pt-BR') : '—'),
     },
     {
       key: 'createdAt',
-      header: 'Created',
-      render: (row: Payment) => new Date(row.createdAt).toLocaleDateString(),
+      header: 'Criado em',
+      render: (row: any) => new Date(row.createdAt).toLocaleDateString('pt-BR'),
     },
   ];
 
   return (
     <div>
-      <PageHeader title="Payments" description="Track payment history" />
+      <PageHeader title="Pagamentos" description="Acompanhe o histórico de pagamentos" />
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
     </div>
   );

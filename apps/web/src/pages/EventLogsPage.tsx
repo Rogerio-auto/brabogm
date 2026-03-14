@@ -10,24 +10,24 @@ export default function EventLogsPage() {
   );
 
   const columns = [
-    { key: 'type', header: 'Event Type' },
-    { key: 'source', header: 'Source' },
-    { key: 'customerId', header: 'Customer ID', render: (row: any) => row.customerId || '—' },
+    { key: 'type', header: 'Tipo de Evento' },
+    { key: 'source', header: 'Origem' },
+    { key: 'customerId', header: 'ID do Cliente', render: (row: any) => row.customerId || '—' },
     {
       key: 'subscriptionId',
-      header: 'Subscription ID',
+      header: 'ID da Assinatura',
       render: (row: any) => row.subscriptionId || '—',
     },
     {
       key: 'createdAt',
-      header: 'Timestamp',
-      render: (row: any) => new Date(row.createdAt).toLocaleString(),
+      header: 'Data/Hora',
+      render: (row: any) => new Date(row.createdAt).toLocaleString('pt-BR'),
     },
   ];
 
   return (
     <div>
-      <PageHeader title="Event Logs" description="System event history" />
+      <PageHeader title="Logs de Eventos" description="Histórico de eventos do sistema" />
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
     </div>
   );

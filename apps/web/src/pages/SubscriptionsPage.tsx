@@ -1,6 +1,5 @@
 import React from 'react';
 import { useQuery } from 'react-query';
-import type { Subscription } from '@brabogm/shared';
 import { api } from '../lib/api';
 import Table from '../components/Table';
 import StatusBadge from '../components/StatusBadge';
@@ -12,25 +11,25 @@ export default function SubscriptionsPage() {
   );
 
   const columns = [
-    { key: 'planName', header: 'Plan' },
-    { key: 'customerId', header: 'Customer ID' },
+    { key: 'productId', header: 'Produto' },
+    { key: 'customerId', header: 'ID do Cliente' },
     {
       key: 'amount',
-      header: 'Amount',
-      render: (row: Subscription) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
+      header: 'Valor',
+      render: (row: any) => `${row.currency} ${Number(row.amount).toFixed(2)}`,
     },
-    { key: 'billingCycle', header: 'Cycle' },
-    { key: 'status', header: 'Status', render: (row: Subscription) => <StatusBadge status={row.status} /> },
+    { key: 'billingCycle', header: 'Ciclo' },
+    { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.status} /> },
     {
       key: 'startDate',
-      header: 'Start Date',
-      render: (row: Subscription) => new Date(row.startDate).toLocaleDateString(),
+      header: 'Data Início',
+      render: (row: any) => new Date(row.startDate).toLocaleDateString('pt-BR'),
     },
   ];
 
   return (
     <div>
-      <PageHeader title="Subscriptions" description="Manage customer subscriptions" />
+      <PageHeader title="Assinaturas" description="Gerencie as assinaturas dos clientes" />
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
     </div>
   );

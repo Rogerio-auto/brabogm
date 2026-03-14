@@ -1,9 +1,10 @@
 import React from 'react';
+import { LucideIcon } from 'lucide-react';
 
 type StatCardProps = {
   title: string;
   value: string | number;
-  icon?: string;
+  icon?: LucideIcon;
   description?: string;
   color?: 'blue' | 'green' | 'yellow' | 'red' | 'purple';
 };
@@ -16,12 +17,12 @@ const colorMap = {
   purple: 'bg-purple-50 border-purple-200 text-purple-700',
 };
 
-export default function StatCard({ title, value, icon, description, color = 'blue' }: StatCardProps) {
+export default function StatCard({ title, value, icon: Icon, description, color = 'blue' }: StatCardProps) {
   return (
     <div className={`rounded-xl border p-5 ${colorMap[color]}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium opacity-80">{title}</span>
-        {icon && <span className="text-2xl">{icon}</span>}
+        {Icon && <Icon size={24} />}
       </div>
       <div className="text-3xl font-bold">{value}</div>
       {description && <p className="text-xs mt-1 opacity-70">{description}</p>}

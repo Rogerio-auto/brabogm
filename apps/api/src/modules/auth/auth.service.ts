@@ -69,4 +69,35 @@ export class AuthService implements OnModuleInit {
       this.logger.log('Default admin user created (admin@brabogm.com)');
     }
   }
+
+  async updateProfile(userId: string, data: { name: string; email: string }) {
+    await this.db
+      .update(users)
+      .set({ name: data.name, email: data.email, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    const [updated] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const { passwordHash: _, ...result } = updated;
+    return result;
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Senha atual incorreta');
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await this.db
+      .update(users)
+      .set({ passwordHash: hash, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    return { message: 'Senha alterada com sucesso' };
+  }
 }

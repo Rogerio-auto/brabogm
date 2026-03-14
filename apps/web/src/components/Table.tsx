@@ -17,7 +17,7 @@ export default function Table<T extends Record<string, any>>({
   columns,
   data,
   isLoading,
-  emptyMessage = 'No data found',
+  emptyMessage = 'Nenhum dado encontrado',
 }: TableProps<T>) {
   if (isLoading) {
     return (
@@ -53,7 +53,7 @@ export default function Table<T extends Record<string, any>>({
             data.map((row, i) => (
               <tr key={row.id ?? i} className="hover:bg-gray-50 transition-colors">
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                  <td key={col.key} className="px-4 py-3 text-sm text-gray-700">
                     {col.render ? col.render(row) : row[col.key]}
                   </td>
                 ))}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { LogIn } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('admin@brabogm.com');
@@ -18,7 +19,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/');
     } catch {
-      setError('Invalid email or password');
+      setError('E-mail ou senha inválidos');
     } finally {
       setIsLoading(false);
     }
@@ -30,11 +31,11 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Brabogm</h1>
-            <p className="text-gray-500 mt-2">Subscription Management</p>
+            <p className="text-gray-500 mt-2">Gestão de Assinaturas</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
               <input
                 type="email"
                 value={email}
@@ -44,7 +45,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
               <input
                 type="password"
                 value={password}
@@ -57,9 +58,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
             >
-              {isLoading ? 'Signing in...' : 'Sign in'}
+              <LogIn size={18} />
+              {isLoading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
         </div>

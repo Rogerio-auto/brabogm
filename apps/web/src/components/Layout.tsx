@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  LayoutDashboard,
+  Users,
+  RefreshCw,
+  CreditCard,
+  ScrollText,
+  Zap,
+  Settings,
+  LogOut,
+  Menu,
+} from 'lucide-react';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/customers', label: 'Customers', icon: '👥' },
-  { to: '/subscriptions', label: 'Subscriptions', icon: '🔄' },
-  { to: '/payments', label: 'Payments', icon: '💳' },
-  { to: '/event-logs', label: 'Event Logs', icon: '📋' },
-  { to: '/admin-actions', label: 'Admin Actions', icon: '⚡' },
+  { to: '/', label: 'Painel', icon: LayoutDashboard, end: true },
+  { to: '/customers', label: 'Clientes', icon: Users },
+  { to: '/subscriptions', label: 'Assinaturas', icon: RefreshCw },
+  { to: '/payments', label: 'Pagamentos', icon: CreditCard },
+  { to: '/event-logs', label: 'Logs de Eventos', icon: ScrollText },
+  { to: '/admin-actions', label: 'Ações Admin', icon: Zap },
+  { to: '/settings', label: 'Configurações', icon: Settings },
 ];
 
 export default function Layout() {
@@ -25,7 +37,7 @@ export default function Layout() {
     <div className="flex flex-col h-full bg-gray-900 text-white w-64">
       <div className="p-4 border-b border-gray-700">
         <h1 className="text-xl font-bold text-blue-400">Brabogm</h1>
-        <p className="text-xs text-gray-400 mt-1">Subscription Management</p>
+        <p className="text-xs text-gray-400 mt-1">Gestão de Assinaturas</p>
       </div>
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => (
@@ -42,7 +54,7 @@ export default function Layout() {
               }`
             }
           >
-            <span>{item.icon}</span>
+            <item.icon size={18} />
             {item.label}
           </NavLink>
         ))}
@@ -51,9 +63,10 @@ export default function Layout() {
         <div className="text-sm text-gray-400 mb-2">{user?.name}</div>
         <button
           onClick={handleLogout}
-          className="w-full text-left text-sm text-gray-400 hover:text-white transition-colors"
+          className="w-full flex items-center gap-2 text-left text-sm text-gray-400 hover:text-white transition-colors"
         >
-          Sign out →
+          <LogOut size={16} />
+          Sair
         </button>
       </div>
     </div>
@@ -61,12 +74,10 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Desktop sidebar */}
       <div className="hidden md:flex flex-shrink-0">
         <Sidebar />
       </div>
 
-      {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div
@@ -80,10 +91,9 @@ export default function Layout() {
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
         <div className="md:hidden bg-gray-900 text-white p-4 flex items-center justify-between">
           <button onClick={() => setSidebarOpen(true)} className="text-gray-300">
-            ☰
+            <Menu size={24} />
           </button>
           <h1 className="font-bold text-blue-400">Brabogm</h1>
           <div />

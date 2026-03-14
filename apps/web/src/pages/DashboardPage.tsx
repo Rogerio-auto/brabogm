@@ -3,6 +3,7 @@ import { useQuery } from 'react-query';
 import { api } from '../lib/api';
 import StatCard from '../components/StatCard';
 import PageHeader from '../components/PageHeader';
+import { Users, RefreshCw, CreditCard } from 'lucide-react';
 
 export default function DashboardPage() {
   const { data: customers } = useQuery('customers-count', () =>
@@ -18,36 +19,36 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description="Overview of your subscription management system"
+        title="Painel"
+        description="Visão geral do sistema de gestão de assinaturas"
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         <StatCard
-          title="Total Customers"
+          title="Total de Clientes"
           value={customers?.total ?? '—'}
-          icon="👥"
+          icon={Users}
           color="blue"
         />
         <StatCard
-          title="Total Subscriptions"
+          title="Total de Assinaturas"
           value={subscriptions?.total ?? '—'}
-          icon="🔄"
+          icon={RefreshCw}
           color="green"
         />
         <StatCard
-          title="Total Payments"
+          title="Total de Pagamentos"
           value={payments?.total ?? '—'}
-          icon="💳"
+          icon={CreditCard}
           color="purple"
         />
       </div>
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="font-semibold text-gray-700 mb-2">Quick Start</h2>
+        <h2 className="font-semibold text-gray-700 mb-2">Início Rápido</h2>
         <ul className="text-sm text-gray-500 space-y-1 list-disc list-inside">
-          <li>Add customers via the Customers page</li>
-          <li>Create subscriptions and track billing</li>
-          <li>Monitor payments and event logs</li>
-          <li>Use Admin Actions to trigger n8n workflows</li>
+          <li>Adicione clientes pela página de Clientes</li>
+          <li>Crie assinaturas e acompanhe cobranças</li>
+          <li>Monitore pagamentos e logs de eventos</li>
+          <li>Use Ações Admin para disparar workflows no n8n</li>
         </ul>
       </div>
     </div>

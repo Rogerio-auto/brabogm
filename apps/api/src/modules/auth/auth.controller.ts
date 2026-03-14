@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Request } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -23,5 +23,24 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user info' })
   async me(@Request() req: any) {
     return req.user;
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update profile (name and email)' })
+  async updateProfile(@Request() req: any, @Body() body: { name: string; email: string }) {
+    return this.authService.updateProfile(req.user.sub ?? req.user.id, body);
+  }
+
+  @Patch('password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change password' })
+  async changePassword(
+    @Request() req: any,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(req.user.sub ?? req.user.id, body.currentPassword, body.newPassword);
   }
 }

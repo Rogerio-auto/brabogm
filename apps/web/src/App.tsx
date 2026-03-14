@@ -8,6 +8,7 @@ import SubscriptionsPage from './pages/SubscriptionsPage';
 import PaymentsPage from './pages/PaymentsPage';
 import EventLogsPage from './pages/EventLogsPage';
 import AdminActionsPage from './pages/AdminActionsPage';
+import SettingsPage from './pages/SettingsPage';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,7 @@ function AppRoutes() {
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="event-logs" element={<EventLogsPage />} />
         <Route path="admin-actions" element={<AdminActionsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );
