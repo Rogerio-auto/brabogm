@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
-import { MoreVertical, Play, Ban, RotateCcw, Send, X, Search, Filter, XCircle } from 'lucide-react';
+import { MoreVertical, Play, Ban, RotateCcw, Send, X, Search, Filter, XCircle, Plus } from 'lucide-react';
 
 const CUSTOMER_ACTIONS = [
   { key: 'trigger_n8n_workflow', label: 'Acionar Workflow n8n', icon: Play },
@@ -20,7 +20,7 @@ function ActionMenu({ customerId }: { customerId: string }) {
 
   const mutation = useMutation(
     (action: { type: string; customerId: string }) =>
-      api.post('/admin-actions', { type: action.type, customerId: action.customerId, notes: '' }),
+      api.post('/admin-actions', { type: action.type, customerId: action.customerId }),
   );
 
   const handleAction = async (actionKey: string) => {
@@ -76,11 +76,14 @@ const STATUS_OPTIONS = [
 ];
 
 export default function CustomersPage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: '', email: '', document: '' });
 
   // Applied filters (only applied on submit / search action)
   const [appliedFilters, setAppliedFilters] = useState({
@@ -116,6 +119,24 @@ export default function CustomersPage() {
 
   const hasActiveFilters = appliedFilters.search || appliedFilters.status || appliedFilters.dateFrom || appliedFilters.dateTo;
 
+  const createMutation = useMutation(
+    (payload: typeof createForm) => {
+      const body = {
+        name: payload.name,
+        email: payload.email,
+        document: payload.document || undefined,
+      };
+      return api.post('/customers', body).then((r) => r.data);
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('customers');
+        setShowCreateForm(false);
+        setCreateForm({ name: '', email: '', document: '' });
+      },
+    },
+  );
+
   const columns = [
     { key: 'name', header: 'Nome' },
     { key: 'email', header: 'E-mail' },
@@ -139,24 +160,85 @@ export default function CustomersPage() {
         title="Clientes"
         description="Gerencie seus clientes"
         action={
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm transition-colors border ${
-              hasActiveFilters
-                ? 'bg-blue-50 border-blue-300 text-blue-700'
-                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filtros
-            {hasActiveFilters && (
-              <span className="ml-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {[appliedFilters.search, appliedFilters.status, appliedFilters.dateFrom, appliedFilters.dateTo].filter(Boolean).length}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowCreateForm(!showCreateForm); if (!showCreateForm) setShowFilters(false); }}
+              className="flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Novo Cliente
+            </button>
+            <button
+              onClick={() => { setShowFilters(!showFilters); if (!showFilters) setShowCreateForm(false); }}
+              className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm transition-colors border ${
+                hasActiveFilters
+                  ? 'bg-blue-50 border-blue-300 text-blue-700'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtros
+              {hasActiveFilters && (
+                <span className="ml-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {[appliedFilters.search, appliedFilters.status, appliedFilters.dateFrom, appliedFilters.dateTo].filter(Boolean).length}
+                </span>
+              )}
+            </button>
+          </div>
         }
       />
+
+      {showCreateForm && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+          <h3 className="font-semibold mb-4">Novo Cliente</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+              <input
+                type="text"
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                placeholder="Nome completo"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">E-mail *</label>
+              <input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                placeholder="email@exemplo.com"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">CPF / Documento</label>
+              <input
+                type="text"
+                value={createForm.document}
+                onChange={(e) => setCreateForm({ ...createForm, document: e.target.value })}
+                placeholder="Opcional"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => createMutation.mutate(createForm)}
+              disabled={createMutation.isLoading || !createForm.name || !createForm.email}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {createMutation.isLoading ? 'Salvando...' : 'Salvar Cliente'}
+            </button>
+            <button
+              onClick={() => setShowCreateForm(false)}
+              className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {showFilters && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">

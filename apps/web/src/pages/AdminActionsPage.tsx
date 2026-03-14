@@ -46,6 +46,13 @@ function CustomerSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!value) {
+      setSelectedLabel('');
+      setSearchTerm('');
+    }
+  }, [value]);
+
   const customers = data?.data ?? [];
 
   return (
@@ -88,7 +95,7 @@ function CustomerSearch({
               key={c.id}
               type="button"
               onClick={() => {
-                const label = `${c.name} — ${c.email}`;
+                const label = `${c.name} — ${c.email}${c.document ? ` · ${c.document}` : ''}`;
                 onChange(c.id, label);
                 setSelectedLabel(label);
                 setOpen(false);
@@ -120,8 +127,24 @@ export default function AdminActionsPage() {
     api.get('/admin-actions').then((r) => r.data),
   );
 
+  // Auto-load subscriptions when a customer is selected
+  const { data: subsData, isLoading: subsLoading } = useQuery(
+    ['customer-subscriptions', form.customerId],
+    () => api.get(`/subscriptions?customerId=${form.customerId}&limit=50`).then((r) => r.data),
+    { enabled: !!form.customerId },
+  );
+
+  const customerSubscriptions = subsData?.data ?? [];
+
   const mutation = useMutation(
-    (payload: typeof form) => api.post('/admin-actions', payload).then((r) => r.data),
+    (payload: typeof form) => {
+      const body = {
+        ...payload,
+        customerId: payload.customerId || undefined,
+        subscriptionId: payload.subscriptionId || undefined,
+      };
+      return api.post('/admin-actions', body).then((r) => r.data);
+    },
     {
       onSuccess: () => {
         queryClient.invalidateQueries('admin-actions');
@@ -179,18 +202,39 @@ export default function AdminActionsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
               <CustomerSearch
                 value={form.customerId}
-                onChange={(id) => setForm({ ...form, customerId: id })}
+                onChange={(id) => setForm({ ...form, customerId: id, subscriptionId: '' })}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ID da Assinatura</label>
-              <input
-                type="text"
-                value={form.subscriptionId}
-                onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
-                placeholder="Opcional"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Assinatura</label>
+              {form.customerId ? (
+                subsLoading ? (
+                  <div className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-400">
+                    Carregando assinaturas...
+                  </div>
+                ) : customerSubscriptions.length > 0 ? (
+                  <select
+                    value={form.subscriptionId}
+                    onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecione uma assinatura</option>
+                    {customerSubscriptions.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.billingCycle} — {s.currency} {Number(s.amount).toFixed(2)} — {s.status}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-400">
+                    Nenhuma assinatura encontrada para este cliente
+                  </div>
+                )
+              ) : (
+                <div className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-400">
+                  Selecione um cliente primeiro
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>

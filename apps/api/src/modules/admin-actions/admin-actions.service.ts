@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { eq, desc, count } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
-import { adminActions } from '../../database/schema';
+import { adminActions, customers } from '../../database/schema';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { CreateAdminActionDto } from './dto/create-admin-action.dto';
 
@@ -39,21 +39,46 @@ export class AdminActionsService {
   }
 
   async create(dto: CreateAdminActionDto, adminId: string) {
+    const values = {
+      type: dto.type,
+      adminId,
+      status: 'processing' as const,
+      customerId: dto.customerId || null,
+      subscriptionId: dto.subscriptionId || null,
+      paymentId: dto.paymentId || null,
+      payload: dto.payload || null,
+      notes: dto.notes || null,
+    };
+
     const [action] = await this.db
       .insert(adminActions)
-      .values({ ...dto, adminId, status: 'processing' })
+      .values(values)
       .returning();
 
     try {
-      if (dto.type === 'trigger_n8n_workflow') {
-        await this.integrationsService.triggerN8nWebhook('admin-action', {
-          actionId: action.id,
-          type: dto.type,
-          payload: dto.payload,
-          customerId: dto.customerId,
-          subscriptionId: dto.subscriptionId,
-        });
+      const webhookPayload: Record<string, unknown> = {
+        actionId: action.id,
+        type: dto.type,
+      };
+      if (dto.customerId) {
+        webhookPayload.customerId = dto.customerId;
+        const [customer] = await this.db
+          .select({ name: customers.name, email: customers.email, document: customers.document })
+          .from(customers)
+          .where(eq(customers.id, dto.customerId))
+          .limit(1);
+        if (customer) {
+          webhookPayload.customerName = customer.name;
+          webhookPayload.customerEmail = customer.email;
+          if (customer.document) webhookPayload.customerDocument = customer.document;
+        }
       }
+      if (dto.subscriptionId) webhookPayload.subscriptionId = dto.subscriptionId;
+      if (dto.paymentId) webhookPayload.paymentId = dto.paymentId;
+      if (dto.payload) webhookPayload.payload = dto.payload;
+      if (dto.notes) webhookPayload.notes = dto.notes;
+
+      await this.integrationsService.triggerN8nWebhook(dto.type, webhookPayload);
 
       await this.db
         .update(adminActions)

@@ -45,8 +45,8 @@ export default function DashboardPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="font-semibold text-gray-700 mb-2">Início Rápido</h2>
         <ul className="text-sm text-gray-500 space-y-1 list-disc list-inside">
-          <li>Adicione clientes pela página de Clientes</li>
-          <li>Crie assinaturas e acompanhe cobranças</li>
+          <li>Adicione clientes manualmente pelo botão "Novo Cliente" na página de Clientes</li>
+          <li>Use os filtros de busca em Clientes, Assinaturas e Pagamentos para localizar registros</li>
           <li>Monitore pagamentos e logs de eventos</li>
           <li>Use Ações Admin para disparar workflows no n8n</li>
         </ul>

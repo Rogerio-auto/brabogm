@@ -14,10 +14,11 @@ export class SubscriptionsService {
     limit: number;
     search?: string;
     status?: string;
+    customerId?: string;
     dateFrom?: string;
     dateTo?: string;
   }) {
-    const { page, limit, search, status, dateFrom, dateTo } = params;
+    const { page, limit, search, status, customerId, dateFrom, dateTo } = params;
     const offset = (page - 1) * limit;
 
     const conditions: SQL[] = [];
@@ -34,6 +35,10 @@ export class SubscriptionsService {
 
     if (status) {
       conditions.push(eq(subscriptions.status, status));
+    }
+
+    if (customerId) {
+      conditions.push(eq(subscriptions.customerId, customerId));
     }
 
     if (dateFrom) {

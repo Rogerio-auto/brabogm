@@ -28,6 +28,7 @@ export class SubscriptionsController {
     @Query('limit') limit = 20,
     @Query('search') search?: string,
     @Query('status') status?: string,
+    @Query('customerId') customerId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
@@ -36,6 +37,7 @@ export class SubscriptionsController {
       limit: +limit,
       search,
       status,
+      customerId,
       dateFrom,
       dateTo,
     });
