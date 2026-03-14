@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { eq, desc, count } from 'drizzle-orm';
-import { DATABASE_CONNECTION } from '../../database/database.module';
+import { DATABASE_CONNECTION } from '../../database/database.constants';
 import { adminActions } from '../../database/schema';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { CreateAdminActionDto } from './dto/create-admin-action.dto';

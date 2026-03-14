@@ -1,6 +1,6 @@
 import { Injectable, Inject, OnModuleInit, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { DATABASE_CONNECTION } from './database.module';
+import { DATABASE_CONNECTION } from './database.constants';
 
 @Injectable()
 export class DatabaseInitService implements OnModuleInit {

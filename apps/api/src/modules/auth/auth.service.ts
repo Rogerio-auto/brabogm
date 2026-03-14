@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, Inject, OnModuleInit, Logger } from 
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import { DATABASE_CONNECTION } from '../../database/database.module';
+import { DATABASE_CONNECTION } from '../../database/database.constants';
 import { users } from '../../database/schema';
 
 @Injectable()

@@ -4,8 +4,9 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
 import { DatabaseInitService } from './database-init.service';
+import { DATABASE_CONNECTION } from './database.constants';
 
-export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
+export { DATABASE_CONNECTION };
 
 @Global()
 @Module({
