@@ -102,9 +102,9 @@ services:
         max_attempts: 3
       resources:
         limits:
-          memory: 256M
+          memory: 512M
         reservations:
-          memory: 128M
+          memory: 256M
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.pgadmin.rule=Host(`${DOMAIN_PGADMIN}`)"
