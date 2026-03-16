@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CustomersService } from './customers.service';
-import { CreateCustomerDto } from './dto/create-customer.dto';
+import { CreateCustomerDto, ManualCreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 
 @ApiTags('Customers')
@@ -42,6 +42,12 @@ export class CustomersController {
     });
   }
 
+  @Get('products')
+  @ApiOperation({ summary: 'List active products (for manual creation form)' })
+  listProducts() {
+    return this.customersService.listProducts();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get customer by ID' })
   findOne(@Param('id') id: string) {
@@ -52,6 +58,12 @@ export class CustomersController {
   @ApiOperation({ summary: 'Create a new customer' })
   create(@Body() dto: CreateCustomerDto) {
     return this.customersService.create(dto);
+  }
+
+  @Post('manual')
+  @ApiOperation({ summary: 'Create customer manually with contacts and subscription' })
+  manualCreate(@Body() dto: ManualCreateCustomerDto) {
+    return this.customersService.manualCreate(dto);
   }
 
   @Patch(':id')

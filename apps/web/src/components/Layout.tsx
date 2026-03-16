@@ -8,6 +8,7 @@ import {
   CreditCard,
   ScrollText,
   Zap,
+  UserPlus,
   Settings,
   LogOut,
   Menu,
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/payments', label: 'Pagamentos', icon: CreditCard },
   { to: '/event-logs', label: 'Logs de Eventos', icon: ScrollText },
   { to: '/admin-actions', label: 'Ações Admin', icon: Zap },
+  { to: '/affiliates', label: 'Afiliados', icon: UserPlus },
   { to: '/settings', label: 'Configurações', icon: Settings },
 ];
 

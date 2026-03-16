@@ -8,6 +8,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { EventLogsModule } from './modules/event-logs/event-logs.module';
 import { AdminActionsModule } from './modules/admin-actions/admin-actions.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { AffiliatesModule } from './modules/affiliates/affiliates.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
     EventLogsModule,
     AdminActionsModule,
     IntegrationsModule,
+    AffiliatesModule,
   ],
 })
 export class AppModule {}

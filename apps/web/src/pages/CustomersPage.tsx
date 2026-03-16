@@ -75,6 +75,35 @@ const STATUS_OPTIONS = [
   { value: 'suspended', label: 'Suspenso' },
 ];
 
+const BILLING_CYCLE_OPTIONS = [
+  { value: 'monthly', label: 'Mensal' },
+  { value: 'quarterly', label: 'Trimestral' },
+  { value: 'semiannual', label: 'Semestral' },
+  { value: 'yearly', label: 'Anual' },
+];
+
+const ACCESS_TYPE_OPTIONS = [
+  { value: 'paid', label: 'Pago' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'trial', label: 'Trial' },
+];
+
+const initialCreateForm = {
+  name: '',
+  email: '',
+  document: '',
+  whatsapp: '',
+  discord: '',
+  telegram: '',
+  affiliateId: '',
+  productId: '',
+  billingCycle: 'monthly',
+  amount: '',
+  nextBillingDate: '',
+  accessType: 'manual',
+  notifyCustomer: false,
+};
+
 export default function CustomersPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -83,9 +112,8 @@ export default function CustomersPage() {
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', email: '', document: '' });
+  const [createForm, setCreateForm] = useState(initialCreateForm);
 
-  // Applied filters (only applied on submit / search action)
   const [appliedFilters, setAppliedFilters] = useState({
     search: '',
     status: '',
@@ -105,6 +133,18 @@ export default function CustomersPage() {
     () => api.get(`/customers?${queryParams.toString()}`).then((r) => r.data),
   );
 
+  const { data: productsData } = useQuery(
+    ['products'],
+    () => api.get('/customers/products').then((r) => r.data),
+    { enabled: showCreateForm },
+  );
+
+  const { data: affiliatesData } = useQuery(
+    ['affiliates-list'],
+    () => api.get('/affiliates?limit=200').then((r) => r.data),
+    { enabled: showCreateForm },
+  );
+
   const applyFilters = () => {
     setAppliedFilters({ search, status, dateFrom, dateTo });
   };
@@ -121,21 +161,33 @@ export default function CustomersPage() {
 
   const createMutation = useMutation(
     (payload: typeof createForm) => {
-      const body = {
+      const body: Record<string, unknown> = {
         name: payload.name,
         email: payload.email,
-        document: payload.document || undefined,
+        productId: payload.productId,
+        billingCycle: payload.billingCycle,
+        amount: payload.amount,
+        nextBillingDate: payload.nextBillingDate,
+        accessType: payload.accessType,
+        notifyCustomer: payload.notifyCustomer,
       };
-      return api.post('/customers', body).then((r) => r.data);
+      if (payload.document) body.document = payload.document;
+      if (payload.whatsapp) body.whatsapp = payload.whatsapp;
+      if (payload.discord) body.discord = payload.discord;
+      if (payload.telegram) body.telegram = payload.telegram;
+      if (payload.affiliateId) body.affiliateId = payload.affiliateId;
+      return api.post('/customers/manual', body).then((r) => r.data);
     },
     {
       onSuccess: () => {
         queryClient.invalidateQueries('customers');
         setShowCreateForm(false);
-        setCreateForm({ name: '', email: '', document: '' });
+        setCreateForm(initialCreateForm);
       },
     },
   );
+
+  const canSubmit = createForm.name && createForm.email && createForm.productId && createForm.amount && createForm.nextBillingDate;
 
   const columns = [
     { key: 'name', header: 'Nome' },
@@ -190,7 +242,10 @@ export default function CustomersPage() {
       {showCreateForm && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
           <h3 className="font-semibold mb-4">Novo Cliente</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+          {/* Dados Pessoais */}
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dados Pessoais</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
               <input
@@ -221,17 +276,133 @@ export default function CustomersPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
+              <input
+                type="text"
+                value={createForm.whatsapp}
+                onChange={(e) => setCreateForm({ ...createForm, whatsapp: e.target.value })}
+                placeholder="5511999999999"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">@ Discord</label>
+              <input
+                type="text"
+                value={createForm.discord}
+                onChange={(e) => setCreateForm({ ...createForm, discord: e.target.value })}
+                placeholder="usuario#1234"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">@ Telegram</label>
+              <input
+                type="text"
+                value={createForm.telegram}
+                onChange={(e) => setCreateForm({ ...createForm, telegram: e.target.value })}
+                placeholder="@usuario"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Afiliado</label>
+              <select
+                value={createForm.affiliateId}
+                onChange={(e) => setCreateForm({ ...createForm, affiliateId: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Nenhum</option>
+                {(affiliatesData?.data ?? []).map((a: any) => (
+                  <option key={a.id} value={a.id}>{a.name} — {a.email}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex gap-2 mt-4">
+
+          {/* Assinatura */}
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Assinatura</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Produto *</label>
+              <select
+                value={createForm.productId}
+                onChange={(e) => setCreateForm({ ...createForm, productId: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Selecione...</option>
+                {(productsData ?? []).map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name} — R$ {(p.priceInCents / 100).toFixed(2)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ciclo de Cobrança</label>
+              <select
+                value={createForm.billingCycle}
+                onChange={(e) => setCreateForm({ ...createForm, billingCycle: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {BILLING_CYCLE_OPTIONS.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$) *</label>
+              <input
+                type="text"
+                value={createForm.amount}
+                onChange={(e) => setCreateForm({ ...createForm, amount: e.target.value })}
+                placeholder="99.90"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Próxima Cobrança *</label>
+              <input
+                type="date"
+                value={createForm.nextBillingDate}
+                onChange={(e) => setCreateForm({ ...createForm, nextBillingDate: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Acesso</label>
+              <select
+                value={createForm.accessType}
+                onChange={(e) => setCreateForm({ ...createForm, accessType: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {ACCESS_TYPE_OPTIONS.map((a) => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createForm.notifyCustomer}
+                  onChange={(e) => setCreateForm({ ...createForm, notifyCustomer: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                />
+                <span className="text-sm text-gray-700">Disparar ao lead?</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
             <button
               onClick={() => createMutation.mutate(createForm)}
-              disabled={createMutation.isLoading || !createForm.name || !createForm.email}
+              disabled={createMutation.isLoading || !canSubmit}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {createMutation.isLoading ? 'Salvando...' : 'Salvar Cliente'}
             </button>
             <button
-              onClick={() => setShowCreateForm(false)}
+              onClick={() => { setShowCreateForm(false); setCreateForm(initialCreateForm); }}
               className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
             >
               Cancelar

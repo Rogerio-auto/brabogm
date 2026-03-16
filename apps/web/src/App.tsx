@@ -8,6 +8,7 @@ import SubscriptionsPage from './pages/SubscriptionsPage';
 import PaymentsPage from './pages/PaymentsPage';
 import EventLogsPage from './pages/EventLogsPage';
 import AdminActionsPage from './pages/AdminActionsPage';
+import AffiliatesPage from './pages/AffiliatesPage';
 import SettingsPage from './pages/SettingsPage';
 import Layout from './components/Layout';
 
@@ -35,6 +36,7 @@ function AppRoutes() {
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="event-logs" element={<EventLogsPage />} />
         <Route path="admin-actions" element={<AdminActionsPage />} />
+        <Route path="affiliates" element={<AffiliatesPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

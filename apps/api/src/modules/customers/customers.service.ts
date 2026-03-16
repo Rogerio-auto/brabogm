@@ -1,13 +1,17 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { eq, desc, count, ilike, or, and, gte, lte, SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
-import { customers } from '../../database/schema';
-import { CreateCustomerDto } from './dto/create-customer.dto';
+import { customers, customerContacts, subscriptions, products } from '../../database/schema';
+import { CreateCustomerDto, ManualCreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { IntegrationsService } from '../integrations/integrations.service';
 
 @Injectable()
 export class CustomersService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: any) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: any,
+    private readonly integrationsService: IntegrationsService,
+  ) {}
 
   async findAll(params: {
     page: number;
@@ -97,5 +101,68 @@ export class CustomersService {
     await this.findOne(id);
     await this.db.delete(customers).where(eq(customers.id, id));
     return { message: 'Customer deleted successfully' };
+  }
+
+  async manualCreate(dto: ManualCreateCustomerDto) {
+    // 1. Create customer
+    const [customer] = await this.db.insert(customers).values({
+      name: dto.name,
+      email: dto.email,
+      document: dto.document || null,
+      affiliateId: dto.affiliateId || null,
+    }).returning();
+
+    // 2. Create contacts
+    const contactsToInsert: Array<{ customerId: string; channel: string; identifier: string }> = [];
+    if (dto.whatsapp) contactsToInsert.push({ customerId: customer.id, channel: 'whatsapp', identifier: dto.whatsapp });
+    if (dto.discord) contactsToInsert.push({ customerId: customer.id, channel: 'discord', identifier: dto.discord });
+    if (dto.telegram) contactsToInsert.push({ customerId: customer.id, channel: 'telegram', identifier: dto.telegram });
+
+    if (contactsToInsert.length > 0) {
+      await this.db.insert(customerContacts).values(contactsToInsert);
+    }
+
+    // 3. Create subscription
+    const nextBilling = new Date(dto.nextBillingDate);
+    const [subscription] = await this.db.insert(subscriptions).values({
+      customerId: customer.id,
+      productId: dto.productId,
+      status: 'active',
+      accessType: dto.accessType || 'manual',
+      accessGranted: true,
+      startDate: new Date(),
+      endDate: nextBilling,
+      amount: dto.amount,
+      currency: 'BRL',
+      billingCycle: dto.billingCycle,
+    }).returning();
+
+    // 4. Trigger webhook
+    const webhookPayload: Record<string, unknown> = {
+      event: 'manual_customer_created',
+      customerId: customer.id,
+      customerName: dto.name,
+      customerEmail: dto.email,
+      subscriptionId: subscription.id,
+      productId: dto.productId,
+      billingCycle: dto.billingCycle,
+      amount: dto.amount,
+      nextBillingDate: dto.nextBillingDate,
+      accessType: dto.accessType || 'manual',
+      notifyCustomer: dto.notifyCustomer ?? false,
+    };
+    if (dto.document) webhookPayload.customerDocument = dto.document;
+    if (dto.whatsapp) webhookPayload.whatsapp = dto.whatsapp;
+    if (dto.discord) webhookPayload.discord = dto.discord;
+    if (dto.telegram) webhookPayload.telegram = dto.telegram;
+    if (dto.affiliateId) webhookPayload.affiliateId = dto.affiliateId;
+
+    await this.integrationsService.triggerN8nWebhook('manual_customer_created', webhookPayload);
+
+    return { customer, subscription };
+  }
+
+  async listProducts() {
+    return this.db.select().from(products).where(eq(products.isActive, true));
   }
 }
