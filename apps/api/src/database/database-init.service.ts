@@ -159,6 +159,21 @@ export class DatabaseInitService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_admin_actions_admin_id ON admin_actions(admin_id);
       `));
 
+      // Run ALTER statements for columns added after initial creation
+      await this.db.execute(sql.raw(`
+        ALTER TABLE affiliates ADD COLUMN IF NOT EXISTS metadata JSONB;
+      `));
+
+      // Partial unique indexes for customer_contacts channels
+      await this.db.execute(sql.raw(`
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_whatsapp_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'whatsapp';
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_discord_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'discord';
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_telegram_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'telegram';
+      `));
+
       this.logger.log('All database tables verified/created successfully');
     } catch (error) {
       this.logger.error('Failed to create database tables', error);
