@@ -36,6 +36,7 @@ services:
         - "traefik.http.routers.brabogm_api.tls.certresolver=letsencrypt"
         - "traefik.http.services.brabogm_api.loadbalancer.server.port=3001"
         - "traefik.http.routers.brabogm_api.service=brabogm_api"
+        - "traefik.http.routers.brabogm_api.priority=100"
 
   # ========================================================================
   # BRABOGM WEB (React + Nginx)
