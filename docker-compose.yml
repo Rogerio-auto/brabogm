@@ -15,6 +15,9 @@ services:
       DATABASE_URL: postgresql://${PG_USER:-postgres}:${PG_PASS}@postgres_postgres:5432/${PG_DB_BRABOGM:-brabogm}
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN_WEB}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET}
+      N8N_WEBHOOK_ADMIN_ACTION: ${N8N_WEBHOOK_ADMIN_ACTION}
+      N8N_WEBHOOK_NEW_LEAD: ${N8N_WEBHOOK_NEW_LEAD}
     networks:
       - network_public
     deploy:
