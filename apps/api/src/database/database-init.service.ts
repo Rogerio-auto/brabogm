@@ -16,6 +16,7 @@ export class DatabaseInitService implements OnModuleInit {
     this.logger.log('Checking database tables...');
 
     try {
+      // Main table creation
       await this.db.execute(sql.raw(`
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -164,32 +165,32 @@ export class DatabaseInitService implements OnModuleInit {
         ALTER TABLE affiliates ADD COLUMN IF NOT EXISTS metadata JSONB;
       `));
 
-      // Partial unique indexes for customer_contacts channels
-      // First remove duplicates keeping only the most recent entry per customer+channel
-      try {
-        await this.db.execute(sql.raw(`
-          DELETE FROM customer_contacts a
-          USING customer_contacts b
-          WHERE a.customer_id = b.customer_id
-            AND a.channel = b.channel
-            AND a.created_at < b.created_at;
-        `));
-        await this.db.execute(sql.raw(`
-          CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_whatsapp_unique
-            ON customer_contacts (customer_id, channel) WHERE channel = 'whatsapp';
-          CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_discord_unique
-            ON customer_contacts (customer_id, channel) WHERE channel = 'discord';
-          CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_telegram_unique
-            ON customer_contacts (customer_id, channel) WHERE channel = 'telegram';
-        `));
-      } catch (idxErr) {
-        this.logger.warn('Could not create unique indexes on customer_contacts (may already exist or have remaining duplicates)', idxErr);
-      }
-
       this.logger.log('All database tables verified/created successfully');
     } catch (error) {
       this.logger.error('Failed to create database tables', error);
-      throw error;
+      // Don't throw — let the app start even if tables already exist
+    }
+
+    // Partial unique indexes for customer_contacts channels (separate try/catch)
+    try {
+      await this.db.execute(sql.raw(`
+        DELETE FROM customer_contacts a
+        USING customer_contacts b
+        WHERE a.customer_id = b.customer_id
+          AND a.channel = b.channel
+          AND a.created_at < b.created_at;
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_whatsapp_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'whatsapp';
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_discord_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'discord';
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_contacts_customer_channel_telegram_unique
+          ON customer_contacts (customer_id, channel) WHERE channel = 'telegram';
+      `));
+      this.logger.log('Unique indexes on customer_contacts verified/created');
+    } catch (idxErr) {
+      this.logger.warn('Could not create unique indexes on customer_contacts (may have remaining duplicates)', (idxErr as Error).message);
     }
   }
 }

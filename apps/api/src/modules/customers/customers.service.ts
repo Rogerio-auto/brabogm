@@ -124,6 +124,7 @@ export class CustomersService {
 
     // 3. Create subscription
     const nextBilling = new Date(dto.nextBillingDate);
+    const sanitizedAmount = String(dto.amount).replace(',', '.');
     const [subscription] = await this.db.insert(subscriptions).values({
       customerId: customer.id,
       productId: dto.productId,
@@ -132,7 +133,7 @@ export class CustomersService {
       accessGranted: true,
       startDate: new Date(),
       endDate: nextBilling,
-      amount: dto.amount,
+      amount: sanitizedAmount,
       currency: 'BRL',
       billingCycle: dto.billingCycle,
     }).returning();

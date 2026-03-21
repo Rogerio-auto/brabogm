@@ -353,8 +353,14 @@ export default function CustomersPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$) *</label>
               <input
                 type="text"
+                inputMode="decimal"
                 value={createForm.amount}
-                onChange={(e) => setCreateForm({ ...createForm, amount: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value.replace(',', '.');
+                  if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                    setCreateForm({ ...createForm, amount: val });
+                  }
+                }}
                 placeholder="99.90"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               />
