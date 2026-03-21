@@ -78,14 +78,21 @@ export class AdminActionsService {
       if (dto.payload) webhookPayload.payload = dto.payload;
       if (dto.notes) webhookPayload.notes = dto.notes;
 
-      await this.integrationsService.triggerN8nWebhook(dto.type, webhookPayload);
+      const webhookResult = await this.integrationsService.triggerN8nWebhook(dto.type, webhookPayload);
 
-      await this.db
-        .update(adminActions)
-        .set({ status: 'completed', updatedAt: new Date() })
-        .where(eq(adminActions.id, action.id));
-
-      return { ...action, status: 'completed' };
+      if (webhookResult.triggered) {
+        await this.db
+          .update(adminActions)
+          .set({ status: 'completed', result: webhookResult, updatedAt: new Date() })
+          .where(eq(adminActions.id, action.id));
+        return { ...action, status: 'completed' };
+      } else {
+        await this.db
+          .update(adminActions)
+          .set({ status: 'failed', result: webhookResult, updatedAt: new Date() })
+          .where(eq(adminActions.id, action.id));
+        return { ...action, status: 'failed' };
+      }
     } catch (error) {
       await this.db
         .update(adminActions)

@@ -45,13 +45,16 @@ export class IntegrationsService {
     const url = this.getWebhookUrl(event);
     const secret = this.configService.get<string>('N8N_WEBHOOK_SECRET');
 
+    this.logger.log(`[Webhook] Event: ${event} | URL resolved: ${url || 'NULL'}`);
+
     if (!url) {
-      this.logger.warn(`No webhook URL configured for event: ${event}`);
+      this.logger.warn(`[Webhook] No URL for event "${event}". Check env vars N8N_WEBHOOK_ADMIN_ACTION / N8N_WEBHOOK_NEW_LEAD`);
       return { triggered: false, reason: `No webhook URL for event: ${event}` };
     }
 
     try {
       const body = { ...payload, event };
+      this.logger.log(`[Webhook] Sending POST to ${url} with body keys: ${Object.keys(body).join(', ')}`);
       const response = await axios.post(url, body, {
         headers: {
           'Content-Type': 'application/json',
@@ -60,11 +63,14 @@ export class IntegrationsService {
         timeout: 10000,
       });
 
-      this.logger.log(`n8n webhook triggered for event: ${event} -> ${url}`);
+      this.logger.log(`[Webhook] SUCCESS event: ${event} -> ${url} (status ${response.status})`);
       return { triggered: true, status: response.status };
-    } catch (error) {
-      this.logger.error(`Failed to trigger n8n webhook for event ${event}: ${(error as Error).message}`);
-      return { triggered: false, error: (error as Error).message };
+    } catch (error: any) {
+      const msg = error.response
+        ? `HTTP ${error.response.status}: ${JSON.stringify(error.response.data).slice(0, 200)}`
+        : error.message;
+      this.logger.error(`[Webhook] FAILED event: ${event} -> ${url} | Error: ${msg}`);
+      return { triggered: false, error: msg };
     }
   }
 }
