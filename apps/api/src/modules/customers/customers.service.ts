@@ -394,25 +394,36 @@ export class CustomersService {
           }
 
           if (!existingSubId) {
-            // Fallback: customer's most recent subscription for the same product
+            // Fallback: customer's most recent subscription across ANY product.
+            // Necessary because adesão and renovação use different product IDs in Cakto,
+            // but represent the same customer access period.
             const [byCustomer] = await this.db
               .select({ id: subscriptions.id, endDate: subscriptions.endDate })
               .from(subscriptions)
-              .where(
-                and(
-                  eq(subscriptions.customerId, customer.id),
-                  eq(subscriptions.productId, product.id),
-                ),
-              )
+              .where(eq(subscriptions.customerId, customer.id))
               .orderBy(desc(subscriptions.createdAt))
               .limit(1);
             if (byCustomer) existingSubId = byCustomer.id;
           }
 
-          // C3/M1: if force_renewal and still no subscription found → error instead of creating new
-          if (!existingSubId && importMode === 'force_renewal') {
-            result.errors.push({ saleId, error: 'Renovação sem assinatura existente para este produto' });
-            result.skipped++;
+          // If still no subscription found and mode is force_renewal → create new one
+          // (customer may be renewing before ever having been imported as adesão)
+          if (!existingSubId) {
+            await this.db.insert(subscriptions).values({
+              customerId: customer.id,
+              productId: product.id,
+              status: 'active',
+              accessType: 'paid',
+              accessGranted: true,
+              startDate: paidAt,
+              endDate: newEndDate,
+              amount: amount.toFixed(2),
+              currency: 'BRL',
+              billingCycle,
+              externalId: saleId || null,
+              metadata: { source: 'cakto_import', cakto: caktoMeta },
+            });
+            result.imported++;
             continue;
           }
 
