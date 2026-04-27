@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import PageHeader from '../components/PageHeader';
 
+const PAGE_LIMIT = 20;
+
 export default function EventLogsPage() {
-  const { data, isLoading } = useQuery('event-logs', () =>
-    api.get('/event-logs').then((r) => r.data),
+  const [page, setPage] = useState(1);
+
+  const { data, isLoading } = useQuery(
+    ['event-logs', page],
+    () => api.get(`/event-logs?limit=${PAGE_LIMIT}&page=${page}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   const columns = [
@@ -29,6 +36,13 @@ export default function EventLogsPage() {
     <div>
       <PageHeader title="Logs de Eventos" description="Histórico de eventos do sistema" />
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

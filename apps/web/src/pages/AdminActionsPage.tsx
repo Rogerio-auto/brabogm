@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
 import { Plus, Search, X } from 'lucide-react';
@@ -118,13 +119,18 @@ function CustomerSearch({
   );
 }
 
+const PAGE_LIMIT = 20;
+
 export default function AdminActionsPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: ACTION_TYPES[0].value, customerId: '', subscriptionId: '', notes: '' });
+  const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery('admin-actions', () =>
-    api.get('/admin-actions').then((r) => r.data),
+  const { data, isLoading } = useQuery(
+    ['admin-actions', page],
+    () => api.get(`/admin-actions?limit=${PAGE_LIMIT}&page=${page}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   // Auto-load subscriptions when a customer is selected
@@ -266,6 +272,13 @@ export default function AdminActionsPage() {
       )}
 
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

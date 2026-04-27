@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
 import { Search, Filter, XCircle } from 'lucide-react';
@@ -16,12 +17,15 @@ const STATUS_OPTIONS = [
   { value: 'trial', label: 'Trial' },
 ];
 
+const PAGE_LIMIT = 20;
+
 export default function SubscriptionsPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [appliedFilters, setAppliedFilters] = useState({
     search: '',
@@ -31,18 +35,21 @@ export default function SubscriptionsPage() {
   });
 
   const queryParams = new URLSearchParams();
-  queryParams.set('limit', '50');
+  queryParams.set('limit', String(PAGE_LIMIT));
+  queryParams.set('page', String(page));
   if (appliedFilters.search) queryParams.set('search', appliedFilters.search);
   if (appliedFilters.status) queryParams.set('status', appliedFilters.status);
   if (appliedFilters.dateFrom) queryParams.set('dateFrom', appliedFilters.dateFrom);
   if (appliedFilters.dateTo) queryParams.set('dateTo', appliedFilters.dateTo);
 
   const { data, isLoading } = useQuery(
-    ['subscriptions', appliedFilters],
+    ['subscriptions', appliedFilters, page],
     () => api.get(`/subscriptions?${queryParams.toString()}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   const applyFilters = () => {
+    setPage(1);
     setAppliedFilters({ search, status, dateFrom, dateTo });
   };
 
@@ -51,6 +58,7 @@ export default function SubscriptionsPage() {
     setStatus('');
     setDateFrom('');
     setDateTo('');
+    setPage(1);
     setAppliedFilters({ search: '', status: '', dateFrom: '', dateTo: '' });
   };
 
@@ -173,6 +181,13 @@ export default function SubscriptionsPage() {
       )}
 
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

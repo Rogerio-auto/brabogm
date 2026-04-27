@@ -489,6 +489,22 @@ Senha:    admin123
 
 ## Integração com n8n
 
+### Contexto operacional atual (Abr/2026)
+
+- O onboarding foi migrado para Telegram para ativação de acessos.
+- Parte dos alunos já existe em `customers`, mas sem registro correspondente em `subscriptions`.
+- O lead precisa iniciar conversa com o bot para o Telegram ser capturado e vinculado ao aluno.
+- É necessário sincronizar periodicamente para corrigir assinaturas ausentes e manter consistência entre bot, n8n e banco.
+
+### Variáveis obrigatórias para sincronização
+
+```env
+N8N_API_URL=https://auto.brabogm.cloud
+N8N_APIKEY_MORAL=define-in-secret-manager
+```
+
+> Segurança: manter a chave real fora do repositório (secret manager / variável de ambiente no servidor).
+
 ### Como o n8n envia dados para esta API
 
 ```http
@@ -517,6 +533,13 @@ Também existe o endpoint direto (sem criar um AdminAction):
 POST /api/integrations/n8n/trigger
 Body: { "event": "nome-do-evento", "payload": { ... } }
 ```
+
+### Ajuste funcional recomendado (Telegram como canal principal)
+
+- Atualizar o workflow de `admin-actions` no n8n para priorizar `telegram` como canal de comunicação com o aluno.
+- Quando o bot receber o contato, persistir/atualizar `customer_contacts.channel = 'telegram'`.
+- Na sincronização, para cada `customer` sem assinatura ativa, consultar fonte de verdade no n8n e criar/atualizar `subscriptions`.
+- Registrar resultado da sincronização em `event_logs` para auditoria e suporte.
 
 ---
 

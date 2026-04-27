@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import PageHeader from '../components/PageHeader';
 import { Search, Filter, XCircle, Plus, Pencil, Trash2 } from 'lucide-react';
 
 const initialForm = { name: '', email: '', metadata: '' };
+const PAGE_LIMIT = 20;
 
 export default function AffiliatesPage() {
   const queryClient = useQueryClient();
@@ -15,14 +17,17 @@ export default function AffiliatesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(initialForm);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const queryParams = new URLSearchParams();
-  queryParams.set('limit', '50');
+  queryParams.set('limit', String(PAGE_LIMIT));
+  queryParams.set('page', String(page));
   if (appliedSearch) queryParams.set('search', appliedSearch);
 
   const { data, isLoading } = useQuery(
-    ['affiliates', appliedSearch],
+    ['affiliates', appliedSearch, page],
     () => api.get(`/affiliates?${queryParams.toString()}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   const createMutation = useMutation(
@@ -254,14 +259,14 @@ export default function AffiliatesPage() {
           />
         </div>
         <button
-          onClick={() => setAppliedSearch(search)}
+          onClick={() => { setAppliedSearch(search); setPage(1); }}
           className="flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
         >
           <Search className="w-4 h-4" /> Buscar
         </button>
         {appliedSearch && (
           <button
-            onClick={() => { setSearch(''); setAppliedSearch(''); }}
+            onClick={() => { setSearch(''); setAppliedSearch(''); setPage(1); }}
             className="flex items-center gap-1 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
           >
             <XCircle className="w-4 h-4" /> Limpar
@@ -276,6 +281,13 @@ export default function AffiliatesPage() {
       )}
 
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

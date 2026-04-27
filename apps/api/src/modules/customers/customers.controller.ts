@@ -8,12 +8,20 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, ManualCreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { ImportCaktoDto } from './dto/import-cakto.dto';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
@@ -64,6 +72,56 @@ export class CustomersController {
   @ApiOperation({ summary: 'Create customer manually with contacts and subscription' })
   manualCreate(@Body() dto: ManualCreateCustomerDto) {
     return this.customersService.manualCreate(dto);
+  }
+
+  @Post('import-cakto')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Import leads from a Cakto CSV/XLS export file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'productId'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        productId: { type: 'string', format: 'uuid' },
+        billingCycle: { type: 'string', enum: ['monthly', 'quarterly', 'semiannual', 'yearly'], default: 'monthly' },
+        skipRefunded: { type: 'boolean', default: true },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+      fileFilter: (_req, file, cb) => {
+        const allowed = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/octet-stream',
+        ];
+        if (allowed.includes(file.mimetype) || file.originalname.match(/\.(csv|xls|xlsx)$/i)) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Apenas arquivos CSV ou XLS/XLSX são aceitos.'), false);
+        }
+      },
+    }),
+  )
+  importCakto(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportCaktoDto,
+  ) {
+    if (!file) throw new BadRequestException('Arquivo é obrigatório.');
+    return this.customersService.importCakto(
+      file.buffer,
+      dto.productId,
+      dto.billingCycle ?? 'monthly',
+      dto.skipRefunded !== false,
+      dto.importMode ?? 'auto',
+    );
   }
 
   @Patch(':id')

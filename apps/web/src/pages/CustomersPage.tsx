@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
-import { MoreVertical, Play, Ban, RotateCcw, Send, X, Search, Filter, XCircle, Plus } from 'lucide-react';
+import ImportCaktoModal from '../components/ImportCaktoModal';
+import { MoreVertical, Play, Ban, RotateCcw, Send, X, Search, Filter, XCircle, Plus, Upload } from 'lucide-react';
 
 const CUSTOMER_ACTIONS = [
   { key: 'trigger_n8n_workflow', label: 'Acionar Workflow n8n', icon: Play },
@@ -112,7 +114,9 @@ export default function CustomersPage() {
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [createForm, setCreateForm] = useState(initialCreateForm);
+  const [page, setPage] = useState(1);
 
   const [appliedFilters, setAppliedFilters] = useState({
     search: '',
@@ -121,16 +125,19 @@ export default function CustomersPage() {
     dateTo: '',
   });
 
+  const PAGE_LIMIT = 20;
   const queryParams = new URLSearchParams();
-  queryParams.set('limit', '50');
+  queryParams.set('limit', String(PAGE_LIMIT));
+  queryParams.set('page', String(page));
   if (appliedFilters.search) queryParams.set('search', appliedFilters.search);
   if (appliedFilters.status) queryParams.set('status', appliedFilters.status);
   if (appliedFilters.dateFrom) queryParams.set('dateFrom', appliedFilters.dateFrom);
   if (appliedFilters.dateTo) queryParams.set('dateTo', appliedFilters.dateTo);
 
   const { data, isLoading } = useQuery(
-    ['customers', appliedFilters],
+    ['customers', appliedFilters, page],
     () => api.get(`/customers?${queryParams.toString()}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   const { data: productsData } = useQuery(
@@ -146,6 +153,7 @@ export default function CustomersPage() {
   );
 
   const applyFilters = () => {
+    setPage(1);
     setAppliedFilters({ search, status, dateFrom, dateTo });
   };
 
@@ -154,6 +162,7 @@ export default function CustomersPage() {
     setStatus('');
     setDateFrom('');
     setDateTo('');
+    setPage(1);
     setAppliedFilters({ search: '', status: '', dateFrom: '', dateTo: '' });
   };
 
@@ -213,6 +222,12 @@ export default function CustomersPage() {
         description="Gerencie seus clientes"
         action={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              <Upload className="w-4 h-4" /> Importar CSV
+            </button>
             <button
               onClick={() => { setShowCreateForm(!showCreateForm); if (!showCreateForm) setShowFilters(false); }}
               className="flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
@@ -491,6 +506,17 @@ export default function CustomersPage() {
       )}
 
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
+
+      {showImportModal && (
+        <ImportCaktoModal onClose={() => setShowImportModal(false)} />
+      )}
     </div>
   );
 }

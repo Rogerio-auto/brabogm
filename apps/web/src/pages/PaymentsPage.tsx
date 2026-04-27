@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { api } from '../lib/api';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusBadge from '../components/StatusBadge';
 import PageHeader from '../components/PageHeader';
 import { Search, Filter, XCircle } from 'lucide-react';
@@ -25,6 +26,8 @@ const METHOD_OPTIONS = [
   { value: 'bank_transfer', label: 'Transferência' },
 ];
 
+const PAGE_LIMIT = 20;
+
 export default function PaymentsPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -32,6 +35,7 @@ export default function PaymentsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [appliedFilters, setAppliedFilters] = useState({
     search: '',
@@ -42,7 +46,8 @@ export default function PaymentsPage() {
   });
 
   const queryParams = new URLSearchParams();
-  queryParams.set('limit', '50');
+  queryParams.set('limit', String(PAGE_LIMIT));
+  queryParams.set('page', String(page));
   if (appliedFilters.search) queryParams.set('search', appliedFilters.search);
   if (appliedFilters.status) queryParams.set('status', appliedFilters.status);
   if (appliedFilters.method) queryParams.set('method', appliedFilters.method);
@@ -50,11 +55,13 @@ export default function PaymentsPage() {
   if (appliedFilters.dateTo) queryParams.set('dateTo', appliedFilters.dateTo);
 
   const { data, isLoading } = useQuery(
-    ['payments', appliedFilters],
+    ['payments', appliedFilters, page],
     () => api.get(`/payments?${queryParams.toString()}`).then((r) => r.data),
+    { keepPreviousData: true },
   );
 
   const applyFilters = () => {
+    setPage(1);
     setAppliedFilters({ search, status, method, dateFrom, dateTo });
   };
 
@@ -64,6 +71,7 @@ export default function PaymentsPage() {
     setMethod('');
     setDateFrom('');
     setDateTo('');
+    setPage(1);
     setAppliedFilters({ search: '', status: '', method: '', dateFrom: '', dateTo: '' });
   };
 
@@ -203,6 +211,13 @@ export default function PaymentsPage() {
       )}
 
       <Table columns={columns} data={data?.data ?? []} isLoading={isLoading} />
+      <Pagination
+        page={page}
+        totalPages={data?.totalPages ?? 1}
+        total={data?.total ?? 0}
+        limit={PAGE_LIMIT}
+        onPageChange={setPage}
+      />
     </div>
   );
 }
