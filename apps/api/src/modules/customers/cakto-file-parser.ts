@@ -257,7 +257,7 @@ function mapToSaleRow(row: ParsedCaktoRow, lineNumber: number): CaktoSaleRow {
 
 export function parseCaktoFile(buffer: Buffer): ParseCaktoFileResult {
   const fileHash = createHash('sha256').update(buffer).digest('hex');
-  const workbook = XLSX.read(buffer, { type: 'buffer', raw: false, cellDates: false });
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
   const sheetName = workbook.SheetNames[0];
 
   if (!sheetName) {
@@ -280,14 +280,17 @@ export function parseCaktoFile(buffer: Buffer): ParseCaktoFileResult {
   const valid: CaktoSaleRow[] = [];
   const malformed: CaktoMalformedRow[] = [];
 
-  for (const [index, rawRow] of (rawRows.slice(1) as string[][]).entries()) {
+  for (const [index, rawRow] of (rawRows.slice(1) as unknown[][]).entries()) {
     if (!rawRow.some((cell) => String(cell ?? '').trim() !== '')) {
       continue;
     }
 
     const canonicalRow = {} as CaktoCanonicalRow;
     headers.forEach((header, columnIndex) => {
-      canonicalRow[header as CaktoCanonicalHeader] = String(rawRow[columnIndex] ?? '').trim();
+      const cellValue = rawRow[columnIndex];
+      canonicalRow[header as CaktoCanonicalHeader] = cellValue instanceof Date
+        ? cellValue.toISOString()
+        : String(cellValue ?? '').trim();
     });
 
     const parsedRow = caktoRowSchema.safeParse(canonicalRow);
