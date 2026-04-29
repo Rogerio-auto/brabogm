@@ -33,10 +33,10 @@ export class IntegrationsController {
 
   @Post('n8n/subscriptions/cancel-wrong-product')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Cancel active subscriptions that belong to a product other than the allowed one' })
+  @ApiOperation({ summary: 'Cancel active subscriptions that belong to a product other than the allowed ones' })
   async cancelWrongProductSubscriptions(
     @Headers('x-n8n-secret') secret: string,
-    @Body() body: { allowedProductName: string; dryRun?: boolean },
+    @Body() body: { allowedProductNames: string[]; dryRun?: boolean },
   ) {
     return this.integrationsService.cancelWrongProductSubscriptionsFromN8n(secret, body);
   }

@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { eq, desc, count, ilike, or, and, gte, lte, ne, SQL } from 'drizzle-orm';
+import { eq, desc, count, ilike, or, and, gte, lte, inArray, notInArray, SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
 import { subscriptions, customers, eventLogs, products } from '../../database/schema';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
@@ -10,42 +10,45 @@ export class SubscriptionsService {
   constructor(@Inject(DATABASE_CONNECTION) private readonly db: any) {}
 
   async cancelSubscriptionsWithWrongProduct(options: {
-    allowedProductName: string;
+    allowedProductNames: string[];
     dryRun?: boolean;
     triggeredBy?: string;
   }) {
-    const { allowedProductName, dryRun = false, triggeredBy = 'system' } = options;
+    const { allowedProductNames, dryRun = false, triggeredBy = 'system' } = options;
     const now = new Date();
 
-    // Busca o produto permitido
-    const [allowedProduct] = await this.db
+    // Busca os produtos permitidos
+    const allowedProducts = await this.db
       .select({ id: products.id, name: products.name })
       .from(products)
-      .where(eq(products.name, allowedProductName))
-      .limit(1);
+      .where(inArray(products.name, allowedProductNames));
 
-    if (!allowedProduct) {
+    const foundNames = allowedProducts.map((p: { id: string; name: string }) => p.name);
+    const notFound = allowedProductNames.filter((n) => !foundNames.includes(n));
+
+    if (notFound.length > 0) {
       return {
         cancelled: 0,
         dryRun,
-        error: `Produto "${allowedProductName}" não encontrado.`,
-        allowedProductName,
+        error: `Produto(s) não encontrado(s): ${notFound.join(', ')}.`,
+        allowedProductNames,
         executedAt: now.toISOString(),
       };
     }
 
-    // Busca assinaturas ativas com produto diferente do permitido
+    const allowedIds = allowedProducts.map((p: { id: string; name: string }) => p.id);
+
+    // Busca assinaturas ativas com produto fora da lista permitida
     const wrongSubs = await this.db
       .select({
         id: subscriptions.id,
-        customerId: subscriptions.customerId,
         productId: subscriptions.productId,
         status: subscriptions.status,
       })
       .from(subscriptions)
       .where(
         and(
-          ne(subscriptions.productId, allowedProduct.id),
+          notInArray(subscriptions.productId, allowedIds),
           or(
             eq(subscriptions.status, 'active'),
             eq(subscriptions.status, 'pending'),
@@ -58,8 +61,8 @@ export class SubscriptionsService {
         cancelled: 0,
         dryRun: true,
         wouldCancel: wrongSubs.length,
-        allowedProductName,
-        allowedProductId: allowedProduct.id,
+        allowedProductNames,
+        allowedProductIds: allowedIds,
         executedAt: now.toISOString(),
       };
     }
@@ -68,8 +71,8 @@ export class SubscriptionsService {
       return {
         cancelled: 0,
         dryRun: false,
-        allowedProductName,
-        allowedProductId: allowedProduct.id,
+        allowedProductNames,
+        allowedProductIds: allowedIds,
         executedAt: now.toISOString(),
       };
     }
@@ -89,8 +92,8 @@ export class SubscriptionsService {
       source: 'n8n',
       payload: {
         cancelled: wrongIds.length,
-        allowedProductName,
-        allowedProductId: allowedProduct.id,
+        allowedProductNames,
+        allowedProductIds: allowedIds,
         triggeredBy,
         executedAt: now.toISOString(),
       },
@@ -99,8 +102,8 @@ export class SubscriptionsService {
     return {
       cancelled: wrongIds.length,
       dryRun: false,
-      allowedProductName,
-      allowedProductId: allowedProduct.id,
+      allowedProductNames,
+      allowedProductIds: allowedIds,
       executedAt: now.toISOString(),
     };
   }

@@ -28,11 +28,11 @@ export class IntegrationsService {
     return { received: true, timestamp: new Date().toISOString() };
   }
 
-  async cancelWrongProductSubscriptionsFromN8n(secret: string, body: { allowedProductName: string; dryRun?: boolean }) {
+  async cancelWrongProductSubscriptionsFromN8n(secret: string, body: { allowedProductNames: string[]; dryRun?: boolean }) {
     this.ensureValidN8nSecret(secret);
 
     const result = await this.subscriptionsService.cancelSubscriptionsWithWrongProduct({
-      allowedProductName: body.allowedProductName,
+      allowedProductNames: body.allowedProductNames,
       dryRun: body.dryRun ?? false,
       triggeredBy: 'integrations.n8n',
     });
