@@ -11,6 +11,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -22,6 +23,8 @@ import { CustomersService } from './customers.service';
 import { CreateCustomerDto, ManualCreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ImportCaktoDto } from './dto/import-cakto.dto';
+import { CommitCaktoImportDto } from './dto/commit-cakto-import.dto';
+import { ResolveOrphanRenewalDto } from './dto/resolve-orphan-renewal.dto';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
@@ -56,6 +59,34 @@ export class CustomersController {
     return this.customersService.listProducts();
   }
 
+  @Get('orphan-renewals')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'List orphan renewal records for manual review' })
+  listOrphanRenewals(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('status') status?: string,
+  ) {
+    return this.customersService.listOrphanRenewals({
+      page: +page,
+      limit: +limit,
+      status,
+    });
+  }
+
+  @Post('orphan-renewals/:id/resolve')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Resolve an orphan renewal by approving as adhesion or rejecting it' })
+  resolveOrphanRenewal(
+    @Param('id') id: string,
+    @Body() dto: ResolveOrphanRenewalDto,
+    @Request() req: any,
+  ) {
+    return this.customersService.resolveOrphanRenewal(id, dto, req.user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get customer by ID' })
   findOne(@Param('id') id: string) {
@@ -82,12 +113,9 @@ export class CustomersController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['file', 'productId'],
+      required: ['file'],
       properties: {
         file: { type: 'string', format: 'binary' },
-        productId: { type: 'string', format: 'uuid' },
-        billingCycle: { type: 'string', enum: ['monthly', 'quarterly', 'semiannual', 'yearly'], default: 'monthly' },
-        skipRefunded: { type: 'boolean', default: true },
       },
     },
   })
@@ -112,16 +140,81 @@ export class CustomersController {
   )
   importCakto(
     @UploadedFile() file: Express.Multer.File,
-    @Body() dto: ImportCaktoDto,
+    @Body() _dto: ImportCaktoDto,
   ) {
     if (!file) throw new BadRequestException('Arquivo é obrigatório.');
-    return this.customersService.importCakto(
-      file.buffer,
-      dto.productId,
-      dto.billingCycle ?? 'monthly',
-      dto.skipRefunded !== false,
-      dto.importMode ?? 'auto',
-    );
+    return this.customersService.importCakto(file.buffer);
+  }
+
+  @Post('import-cakto/preview')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Preview a Cakto CSV/XLS import without persisting data' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowed = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/octet-stream',
+        ];
+        if (allowed.includes(file.mimetype) || file.originalname.match(/\.(csv|xls|xlsx)$/i)) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Apenas arquivos CSV ou XLS/XLSX são aceitos.'), false);
+        }
+      },
+    }),
+  )
+  previewCaktoImport(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() _dto: ImportCaktoDto,
+  ) {
+    if (!file) throw new BadRequestException('Arquivo é obrigatório.');
+    return this.customersService.previewCaktoImport(file.buffer, file.originalname, file.size);
+  }
+
+  @Post('import-cakto/commit')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Commit a previously generated Cakto import preview' })
+  commitCaktoImport(@Body() dto: CommitCaktoImportDto, @Request() req: any) {
+    return this.customersService.commitCaktoImport(dto.previewId, req.user.id);
+  }
+
+  @Get('import-cakto/history')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'List Cakto import history' })
+  findCaktoImportHistory(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    return this.customersService.findCaktoImportHistory({
+      page: +page,
+      limit: +limit,
+    });
+  }
+
+  @Get('import-cakto/history/:importId')
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Get Cakto import history detail' })
+  findCaktoImportDetail(@Param('importId') importId: string) {
+    return this.customersService.findCaktoImportDetail(importId);
   }
 
   @Patch(':id')

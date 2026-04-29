@@ -1,23 +1,45 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 @Injectable()
 export class IntegrationsService {
   private readonly logger = new Logger(IntegrationsService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly subscriptionsService: SubscriptionsService,
+  ) {}
 
-  async ingestFromN8n(body: any, secret: string) {
+  private ensureValidN8nSecret(secret: string) {
     const expectedSecret = this.configService.get<string>('N8N_WEBHOOK_SECRET');
 
     if (expectedSecret && secret !== expectedSecret) {
       throw new UnauthorizedException('Invalid n8n webhook secret');
     }
+  }
+
+  async ingestFromN8n(body: any, secret: string) {
+    this.ensureValidN8nSecret(secret);
 
     this.logger.log(`Received data from n8n: ${JSON.stringify(body)}`);
 
     return { received: true, timestamp: new Date().toISOString() };
+  }
+
+  async expireOverdueSubscriptionsFromN8n(secret: string) {
+    this.ensureValidN8nSecret(secret);
+
+    const result = await this.subscriptionsService.expireOverdueSubscriptions({
+      source: 'n8n',
+      reason: 'n8n_cron',
+      triggeredBy: 'integrations.n8n',
+    });
+
+    this.logger.log(`Expired overdue subscriptions via n8n cron: ${result.expiredCount}`);
+
+    return result;
   }
 
   private getWebhookUrl(event: string): string | null {

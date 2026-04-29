@@ -23,4 +23,11 @@ export class IntegrationsController {
   async triggerN8n(@Body() body: { event: string; payload: any }) {
     return this.integrationsService.triggerN8nWebhook(body.event, body.payload);
   }
+
+  @Post('n8n/subscriptions/expire-overdue')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Expire overdue subscriptions when triggered by n8n cron' })
+  async expireOverdueSubscriptions(@Headers('x-n8n-secret') secret: string) {
+    return this.integrationsService.expireOverdueSubscriptionsFromN8n(secret);
+  }
 }

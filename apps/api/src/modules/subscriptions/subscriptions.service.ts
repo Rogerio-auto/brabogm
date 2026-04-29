@@ -1,13 +1,50 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { eq, desc, count, ilike, or, and, gte, lte, SQL } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
-import { subscriptions, customers } from '../../database/schema';
+import { subscriptions, customers, eventLogs } from '../../database/schema';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
 @Injectable()
 export class SubscriptionsService {
   constructor(@Inject(DATABASE_CONNECTION) private readonly db: any) {}
+
+  async expireOverdueSubscriptions(options?: {
+    source?: 'api' | 'n8n';
+    reason?: string;
+    triggeredBy?: string;
+  }) {
+    const now = new Date();
+    const result = await this.db
+      .update(subscriptions)
+      .set({ status: 'expired', accessGranted: false, updatedAt: now })
+      .where(
+        and(
+          eq(subscriptions.status, 'active'),
+          lte(subscriptions.endDate, now),
+        ),
+      );
+
+    const expiredCount = (result as { rowCount?: number })?.rowCount ?? 0;
+
+    await this.db.insert(eventLogs).values({
+      type: 'subscriptions.expire_overdue_sweep',
+      source: options?.source ?? 'api',
+      payload: {
+        expiredCount,
+        reason: options?.reason ?? 'manual_or_import',
+        triggeredBy: options?.triggeredBy ?? 'system',
+        executedAt: now.toISOString(),
+      },
+    });
+
+    return {
+      expiredCount,
+      executedAt: now.toISOString(),
+      source: options?.source ?? 'api',
+      reason: options?.reason ?? 'manual_or_import',
+    };
+  }
 
   async findAll(params: {
     page: number;

@@ -10,6 +10,8 @@ import {
   Zap,
   UserPlus,
   Settings,
+  FileSpreadsheet,
+  GitBranchPlus,
   LogOut,
   Menu,
 } from 'lucide-react';
@@ -22,6 +24,8 @@ const navItems = [
   { to: '/event-logs', label: 'Logs de Eventos', icon: ScrollText },
   { to: '/admin-actions', label: 'Ações Admin', icon: Zap },
   { to: '/affiliates', label: 'Afiliados', icon: UserPlus },
+  { to: '/cakto-imports', label: 'Histórico Cakto', icon: FileSpreadsheet },
+  { to: '/orphan-renewals', label: 'Renovações Órfãs', icon: GitBranchPlus },
   { to: '/settings', label: 'Configurações', icon: Settings },
 ];
 

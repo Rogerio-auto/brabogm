@@ -171,6 +171,75 @@ export class DatabaseInitService implements OnModuleInit {
       // Don't throw — let the app start even if tables already exist
     }
 
+    // Cakto import tables
+    try {
+      await this.db.execute(sql.raw(`
+        -- cakto_imports
+        CREATE TABLE IF NOT EXISTS cakto_imports (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          file_name VARCHAR(255) NOT NULL,
+          file_hash VARCHAR(64) NOT NULL,
+          file_size INTEGER NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'in_progress',
+          summary JSONB,
+          plan_snapshot JSONB,
+          admin_id UUID REFERENCES users(id),
+          started_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          finished_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cakto_imports_file_hash ON cakto_imports(file_hash);
+        CREATE INDEX IF NOT EXISTS idx_cakto_imports_status ON cakto_imports(status);
+        CREATE INDEX IF NOT EXISTS idx_cakto_imports_created_at ON cakto_imports(created_at);
+        CREATE INDEX IF NOT EXISTS idx_cakto_imports_admin_id ON cakto_imports(admin_id);
+
+        -- cakto_import_events
+        CREATE TABLE IF NOT EXISTS cakto_import_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          import_id UUID REFERENCES cakto_imports(id),
+          sale_id VARCHAR(255) NOT NULL UNIQUE,
+          action VARCHAR(50) NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'processed',
+          customer_email VARCHAR(255),
+          product_name VARCHAR(255),
+          payload JSONB,
+          processed_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cakto_import_events_import_id ON cakto_import_events(import_id);
+        CREATE INDEX IF NOT EXISTS idx_cakto_import_events_action ON cakto_import_events(action);
+
+        -- cakto_orphan_renewals
+        CREATE TABLE IF NOT EXISTS cakto_orphan_renewals (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          sale_id VARCHAR(255) NOT NULL UNIQUE,
+          file_hash VARCHAR(64) NOT NULL,
+          customer_name VARCHAR(255) NOT NULL,
+          customer_email VARCHAR(255) NOT NULL,
+          customer_document VARCHAR(50),
+          customer_phone VARCHAR(50),
+          product_name VARCHAR(255) NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'pending',
+          resolution_action VARCHAR(50),
+          resolution_notes TEXT,
+          amount NUMERIC(10,2),
+          paid_at TIMESTAMP NOT NULL,
+          resolved_by UUID REFERENCES users(id),
+          resolved_at TIMESTAMP,
+          payload JSONB,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cakto_orphan_renewals_status ON cakto_orphan_renewals(status);
+        CREATE INDEX IF NOT EXISTS idx_cakto_orphan_renewals_customer_email ON cakto_orphan_renewals(customer_email);
+        CREATE INDEX IF NOT EXISTS idx_cakto_orphan_renewals_resolved_by ON cakto_orphan_renewals(resolved_by);
+      `));
+      this.logger.log('Cakto import tables verified/created successfully');
+    } catch (error) {
+      this.logger.error('Failed to create Cakto import tables', error);
+    }
+
     // Partial unique indexes for customer_contacts channels (separate try/catch)
     try {
       await this.db.execute(sql.raw(`

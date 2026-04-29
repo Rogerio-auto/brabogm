@@ -1,19 +1,748 @@
-import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
+﻿import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { eq, desc, count, ilike, or, and, gte, lte, SQL } from 'drizzle-orm';
-import * as XLSX from 'xlsx';
 import { DATABASE_CONNECTION } from '../../database/database.constants';
-import { customers, customerContacts, subscriptions, products } from '../../database/schema';
+import { customers, customerContacts, subscriptions, products, caktoImports, caktoImportEvents, eventLogs, caktoOrphanRenewals } from '../../database/schema';
 import { CreateCustomerDto, ManualCreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { getCaktoProductRule } from './cakto-product-mapping';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { ResolveOrphanRenewalDto } from './dto/resolve-orphan-renewal.dto';
+import { CaktoSaleRow, parseCaktoFile } from './cakto-file-parser';
+import { planCaktoImportPreview } from './cakto-import-planner';
+import { CaktoImportExecutor, CaktoImportSummary } from './cakto-import-executor';
+
+
+type CaktoImportPreview = CaktoImportSummary & {
+  previewId: string;
+  orphanRenewals: number;
+  blocked: boolean;
+  blockingReasons: string[];
+  expiresAt: string;
+  fileHash: string;
+  fileName: string;
+  fileSize: number;
+  warnings: string[];
+  hasPriorCompletedImport: boolean;
+  priorImportId: string | null;
+};
+
+type CaktoImportCommitResult = CaktoImportSummary & {
+  importId: string;
+  status: 'completed';
+  fileHash: string;
+  fileName: string;
+  finishedAt: string;
+};
+
+type CaktoImportFileInfo = {
+  fileName: string;
+  fileSize: number;
+  fileHash: string;
+};
+
+type CaktoImportAction = 'ignored' | 'cancelled' | 'renewed' | 'imported' | 'expired';
+
+type CachedCaktoPreview = {
+  fileBuffer: Buffer;
+  summary: CaktoImportPreview;
+  fileInfo: CaktoImportFileInfo;
+  expiresAt: number;
+};
 
 @Injectable()
 export class CustomersService {
+  private readonly caktoPreviewCache = new Map<string, CachedCaktoPreview>();
+  private readonly caktoPreviewTtlMs = 10 * 60 * 1000;
+  private caktoImportInProgress = false;
+
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: any,
     private readonly integrationsService: IntegrationsService,
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly caktoImportExecutor: CaktoImportExecutor,
   ) {}
 
+  private async getDefaultCaktoProduct() {
+    const [defaultProduct] = await this.db
+      .select()
+      .from(products)
+      .where(and(eq(products.isActive, true), ilike(products.name, 'BGM GREEN')))
+      .limit(1);
+
+    if (!defaultProduct) {
+      throw new NotFoundException('Produto BGM GREEN não encontrado na base.');
+    }
+
+    return defaultProduct;
+  }
+
+  private async hasProcessedSaleId(saleId: string): Promise<boolean> {
+    return this.caktoImportExecutor.hasProcessedSaleId(saleId);
+  }
+
+  private async hasBgmSubscription(email: string, productId: string): Promise<boolean> {
+    const [customer] = await this.db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.email, email))
+      .limit(1);
+
+    if (!customer) {
+      return false;
+    }
+
+    const [subscription] = await this.db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.customerId, customer.id),
+          eq(subscriptions.productId, productId),
+        ),
+      )
+      .limit(1);
+
+    return !!subscription;
+  }
+
+  private async getOrphanRenewalStatus(saleId: string): Promise<string | null> {
+    const normalizedSaleId = saleId.trim();
+
+    if (!normalizedSaleId) {
+      return null;
+    }
+
+    const [orphanRenewal] = await this.db
+      .select({ status: caktoOrphanRenewals.status })
+      .from(caktoOrphanRenewals)
+      .where(eq(caktoOrphanRenewals.saleId, normalizedSaleId))
+      .limit(1);
+
+    return orphanRenewal?.status ?? null;
+  }
+
+  private async upsertPendingOrphanRenewal(input: {
+    saleId: string;
+    fileHash: string;
+    customerName: string;
+    customerEmail: string;
+    customerDocument?: string;
+    customerPhone?: string;
+    productName: string;
+    amount: number;
+    paidAt: Date;
+    payload: Record<string, unknown>;
+  }) {
+    if (!input.saleId) {
+      return;
+    }
+
+    await this.db
+      .insert(caktoOrphanRenewals)
+      .values({
+        saleId: input.saleId,
+        fileHash: input.fileHash,
+        customerName: input.customerName,
+        customerEmail: input.customerEmail,
+        customerDocument: input.customerDocument || null,
+        customerPhone: input.customerPhone || null,
+        productName: input.productName,
+        status: 'pending',
+        amount: input.amount.toFixed(2),
+        paidAt: input.paidAt,
+        payload: input.payload,
+      })
+      .onConflictDoUpdate({
+        target: caktoOrphanRenewals.saleId,
+        set: {
+          fileHash: input.fileHash,
+          customerName: input.customerName,
+          customerEmail: input.customerEmail,
+          customerDocument: input.customerDocument || null,
+          customerPhone: input.customerPhone || null,
+          productName: input.productName,
+          status: 'pending',
+          resolutionAction: null,
+          resolutionNotes: null,
+          resolvedAt: null,
+          resolvedBy: null,
+          amount: input.amount.toFixed(2),
+          paidAt: input.paidAt,
+          payload: input.payload,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  private getCachedCaktoPreview(previewId: string): CachedCaktoPreview {
+    const cached = this.caktoPreviewCache.get(previewId);
+
+    if (!cached || cached.expiresAt < Date.now()) {
+      this.caktoPreviewCache.delete(previewId);
+      throw new NotFoundException('Pré-visualização não encontrada ou expirada. Gere uma nova prévia.');
+    }
+
+    return cached;
+  }
+
+  private buildCaktoFileInfo(fileHash: string, fileBuffer: Buffer, fileName?: string, fileSize?: number): CaktoImportFileInfo {
+    return {
+      fileName: fileName?.trim() || 'cakto-import',
+      fileSize: fileSize ?? fileBuffer.length,
+      fileHash,
+    };
+  }
+
+  private async withCaktoImportLock<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.caktoImportInProgress) {
+      throw new BadRequestException('Já existe uma importação Cakto em andamento. Aguarde a conclusão antes de iniciar outra.');
+    }
+
+    this.caktoImportInProgress = true;
+
+    try {
+      return await operation();
+    } finally {
+      this.caktoImportInProgress = false;
+    }
+  }
+
+  private async appendCaktoImportSummaryEvent(options: {
+    importId?: string;
+    fileHash?: string;
+    fileName?: string;
+    summary: unknown;
+    status: 'completed' | 'failed';
+  }) {
+    await this.db.insert(eventLogs).values({
+      type: 'cakto_import.summary',
+      source: 'api',
+      payload: {
+        importId: options.importId ?? null,
+        fileHash: options.fileHash ?? null,
+        fileName: options.fileName ?? null,
+        status: options.status,
+        summary: options.summary,
+      },
+    });
+  }
+
+  private async appendCaktoLineEventLog(
+    executor: any,
+    options: {
+      action: string;
+      saleId: string;
+      importId?: string;
+      customerId?: string | null;
+      subscriptionId?: string | null;
+      customerEmail?: string | null;
+      productName?: string | null;
+      paidAt?: Date | null;
+      endDate?: Date | null;
+      payload?: Record<string, unknown>;
+    },
+  ) {
+    await executor.insert(eventLogs).values({
+      type: `cakto_import.${options.action}`,
+      customerId: options.customerId ?? null,
+      subscriptionId: options.subscriptionId ?? null,
+      source: 'api',
+      payload: {
+        importId: options.importId ?? null,
+        saleId: options.saleId,
+        customerEmail: options.customerEmail ?? null,
+        productName: options.productName ?? null,
+        paidAt: options.paidAt?.toISOString() ?? null,
+        endDate: options.endDate?.toISOString() ?? null,
+        ...(options.payload ?? {}),
+      },
+    });
+  }
+
+  private async prepareCaktoImport(fileBuffer: Buffer, fileName?: string, fileSize?: number) {
+    let rows: CaktoSaleRow[];
+    let fileHash: string;
+    let malformedRows: Array<{ lineNumber: number; error: string }>;
+
+    try {
+      const parsedFile = parseCaktoFile(fileBuffer);
+      rows = parsedFile.valid;
+      fileHash = parsedFile.fileHash;
+      malformedRows = parsedFile.malformed.map(({ lineNumber, error }) => ({ lineNumber, error }));
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Arquivo inválido. Envie um CSV ou XLSX exportado da Cakto.');
+    }
+
+    if (malformedRows.length > 0) {
+      const sampleErrors = malformedRows
+        .slice(0, 5)
+        .map((row) => `linha ${row.lineNumber}: ${row.error}`)
+        .join(' | ');
+      const suffix = malformedRows.length > 5 ? ' | ...' : '';
+      throw new BadRequestException(
+        `Arquivo contém ${malformedRows.length} linha(s) inválida(s): ${sampleErrors}${suffix}`,
+      );
+    }
+
+    if (rows.length === 0) {
+      throw new BadRequestException('Arquivo vazio ou sem dados após o cabeçalho.');
+    }
+
+    const fileInfo = this.buildCaktoFileInfo(fileHash, fileBuffer, fileName, fileSize);
+
+    const [previousCompletedImport] = await this.db
+      .select({ id: caktoImports.id })
+      .from(caktoImports)
+      .where(
+        and(
+          eq(caktoImports.fileHash, fileInfo.fileHash),
+          eq(caktoImports.status, 'completed'),
+        ),
+      )
+      .orderBy(desc(caktoImports.createdAt))
+      .limit(1);
+
+    const unknownProducts = Array.from(new Set(
+      rows
+        .filter((row) => row.saleType !== 'orderbump')
+        .map((row) => row.productName)
+        .filter((productName) => productName && !getCaktoProductRule(productName)),
+    ));
+
+    if (unknownProducts.length > 0) {
+      throw new BadRequestException(
+        `Arquivo contém produto(s) não suportado(s): ${unknownProducts.join(', ')}.`,
+      );
+    }
+
+    const defaultProduct = await this.getDefaultCaktoProduct();
+
+    rows.sort((a, b) => {
+      const da = new Date(a.paidAtRaw || a.saleDateRaw || '').getTime() || 0;
+      const db_ = new Date(b.paidAtRaw || b.saleDateRaw || '').getTime() || 0;
+      if (da !== db_) return da - db_;
+      return a.saleId.localeCompare(b.saleId);
+    });
+
+    return {
+      rows,
+      defaultProduct,
+      fileInfo,
+      previousCompletedImportId: previousCompletedImport?.id ?? null,
+    };
+  }
+
+  async previewCaktoImport(
+    fileBuffer: Buffer,
+    fileName?: string,
+    fileSize?: number,
+  ): Promise<CaktoImportPreview> {
+    const {
+      rows,
+      defaultProduct,
+      fileInfo,
+      previousCompletedImportId,
+    } = await this.prepareCaktoImport(fileBuffer, fileName, fileSize);
+    const plan = await planCaktoImportPreview({
+      rows,
+      durationDays: defaultProduct.durationDays ?? 30,
+      hasProcessedSaleId: (saleId) => this.hasProcessedSaleId(saleId),
+      hasExistingSubscription: (email) => this.hasBgmSubscription(email, defaultProduct.id),
+      getOrphanRenewalStatus: (saleId) => this.getOrphanRenewalStatus(saleId),
+    });
+
+    for (const action of plan.actions) {
+      if (action.kind !== 'orphan_renewal' || !action.paidAt || action.amount === undefined) {
+        continue;
+      }
+
+      await this.upsertPendingOrphanRenewal({
+        saleId: action.saleId,
+        fileHash: fileInfo.fileHash,
+        customerName: action.row.customerName,
+        customerEmail: action.row.customerEmail,
+        customerDocument: action.row.customerDocument,
+        customerPhone: action.row.customerPhone,
+        productName: action.row.productName,
+        amount: action.amount,
+        paidAt: action.paidAt,
+        payload: action.row.raw,
+      });
+    }
+
+    const summary = plan.summary;
+
+    const blockingReasons: string[] = [];
+    if (summary.orphanRenewals > 0) {
+      blockingReasons.push('Existem renovações órfãs que exigem revisão manual.');
+    }
+
+    const warnings: string[] = [];
+    if (previousCompletedImportId) {
+      warnings.push(`Este arquivo já foi importado anteriormente no histórico ${previousCompletedImportId}.`);
+    }
+
+    const previewId = randomUUID();
+    const expiresAt = new Date(Date.now() + this.caktoPreviewTtlMs);
+    const preview: CaktoImportPreview = {
+      ...summary,
+      previewId,
+      blocked: blockingReasons.length > 0,
+      blockingReasons,
+      expiresAt: expiresAt.toISOString(),
+      fileHash: fileInfo.fileHash,
+      fileName: fileInfo.fileName,
+      fileSize: fileInfo.fileSize,
+      warnings,
+      hasPriorCompletedImport: !!previousCompletedImportId,
+      priorImportId: previousCompletedImportId,
+    };
+
+    this.caktoPreviewCache.set(previewId, {
+      fileBuffer,
+      summary: preview,
+      fileInfo,
+      expiresAt: expiresAt.getTime(),
+    });
+
+    return preview;
+  }
+
+  async commitCaktoImport(previewId: string, adminId?: string): Promise<CaktoImportCommitResult> {
+    return this.withCaktoImportLock(async () => {
+      const cachedPreview = this.getCachedCaktoPreview(previewId);
+
+      if (cachedPreview.summary.blocked) {
+        throw new BadRequestException(cachedPreview.summary.blockingReasons.join(' '));
+      }
+
+      const [importRecord] = await this.db
+        .insert(caktoImports)
+        .values({
+          adminId: adminId ?? null,
+          fileName: cachedPreview.fileInfo.fileName,
+          fileHash: cachedPreview.fileInfo.fileHash,
+          fileSize: cachedPreview.fileInfo.fileSize,
+          status: 'in_progress',
+          startedAt: new Date(),
+          planSnapshot: cachedPreview.summary,
+        })
+        .returning({ id: caktoImports.id });
+
+      try {
+        const result = await this.runCaktoImport(cachedPreview.fileBuffer, { importId: importRecord.id });
+        const finishedAt = new Date();
+
+        await this.db
+          .update(caktoImports)
+          .set({
+            status: 'completed',
+            summary: result,
+            finishedAt,
+            updatedAt: finishedAt,
+          })
+          .where(eq(caktoImports.id, importRecord.id));
+
+        await this.appendCaktoImportSummaryEvent({
+          importId: importRecord.id,
+          fileHash: cachedPreview.fileInfo.fileHash,
+          fileName: cachedPreview.fileInfo.fileName,
+          summary: result,
+          status: 'completed',
+        });
+
+        this.caktoPreviewCache.delete(previewId);
+
+        return {
+          ...result,
+          importId: importRecord.id,
+          status: 'completed',
+          fileHash: cachedPreview.fileInfo.fileHash,
+          fileName: cachedPreview.fileInfo.fileName,
+          finishedAt: finishedAt.toISOString(),
+        };
+      } catch (error) {
+        const finishedAt = new Date();
+        const safeMessage = error instanceof Error ? error.message : 'Erro interno ao concluir importação';
+
+        await this.db
+          .update(caktoImports)
+          .set({
+            status: 'failed',
+            summary: { error: safeMessage },
+            finishedAt,
+            updatedAt: finishedAt,
+          })
+          .where(eq(caktoImports.id, importRecord.id));
+
+        await this.appendCaktoImportSummaryEvent({
+          importId: importRecord.id,
+          fileHash: cachedPreview.fileInfo.fileHash,
+          fileName: cachedPreview.fileInfo.fileName,
+          summary: { error: safeMessage },
+          status: 'failed',
+        });
+
+        throw error;
+      }
+    });
+  }
+
+  async findCaktoImportHistory(params: { page: number; limit: number }) {
+    const { page, limit } = params;
+    const offset = (page - 1) * limit;
+
+    const [data, totalResult] = await Promise.all([
+      this.db
+        .select()
+        .from(caktoImports)
+        .orderBy(desc(caktoImports.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ value: count() }).from(caktoImports),
+    ]);
+
+    const total = totalResult[0]?.value ?? 0;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findCaktoImportDetail(importId: string) {
+    const [importRecord] = await this.db
+      .select()
+      .from(caktoImports)
+      .where(eq(caktoImports.id, importId))
+      .limit(1);
+
+    if (!importRecord) {
+      throw new NotFoundException(`Histórico de importação ${importId} não encontrado.`);
+    }
+
+    const events = await this.db
+      .select()
+      .from(caktoImportEvents)
+      .where(eq(caktoImportEvents.importId, importId))
+      .orderBy(desc(caktoImportEvents.processedAt));
+
+    return {
+      import: importRecord,
+      events,
+    };
+  }
+
+  async listOrphanRenewals(params: { page: number; limit: number; status?: string }) {
+    const { page, limit, status } = params;
+    const offset = (page - 1) * limit;
+    const whereClause = status ? eq(caktoOrphanRenewals.status, status) : undefined;
+
+    const [data, totalResult] = await Promise.all([
+      whereClause
+        ? this.db
+          .select()
+          .from(caktoOrphanRenewals)
+          .where(whereClause)
+          .orderBy(desc(caktoOrphanRenewals.createdAt))
+          .limit(limit)
+          .offset(offset)
+        : this.db
+          .select()
+          .from(caktoOrphanRenewals)
+          .orderBy(desc(caktoOrphanRenewals.createdAt))
+          .limit(limit)
+          .offset(offset),
+      whereClause
+        ? this.db.select({ value: count() }).from(caktoOrphanRenewals).where(whereClause)
+        : this.db.select({ value: count() }).from(caktoOrphanRenewals),
+    ]);
+
+    const total = totalResult[0]?.value ?? 0;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async resolveOrphanRenewal(id: string, dto: ResolveOrphanRenewalDto, adminId: string) {
+    const [orphanRenewal] = await this.db
+      .select()
+      .from(caktoOrphanRenewals)
+      .where(eq(caktoOrphanRenewals.id, id))
+      .limit(1);
+
+    if (!orphanRenewal) {
+      throw new NotFoundException(`Renovação órfã ${id} não encontrada.`);
+    }
+
+    if (orphanRenewal.status !== 'pending') {
+      throw new BadRequestException('Esta renovação órfã já foi resolvida anteriormente.');
+    }
+
+    if (dto.action === 'reject') {
+      const resolvedAt = new Date();
+
+      await this.db
+        .update(caktoOrphanRenewals)
+        .set({
+          status: 'rejected',
+          resolutionAction: dto.action,
+          resolutionNotes: dto.notes ?? null,
+          resolvedBy: adminId,
+          resolvedAt,
+          updatedAt: resolvedAt,
+        })
+        .where(eq(caktoOrphanRenewals.id, id));
+
+      await this.db.insert(eventLogs).values({
+        type: 'cakto_import.orphan_rejected',
+        source: 'admin',
+        payload: {
+          orphanRenewalId: id,
+          saleId: orphanRenewal.saleId,
+          customerEmail: orphanRenewal.customerEmail,
+          notes: dto.notes ?? null,
+          adminId,
+        },
+      });
+
+      return { id, status: 'rejected' };
+    }
+
+    const defaultProduct = await this.getDefaultCaktoProduct();
+    const paidAt = new Date(orphanRenewal.paidAt);
+    const durationDays = defaultProduct.durationDays ?? 30;
+    const newEndDate = new Date(paidAt);
+    newEndDate.setDate(newEndDate.getDate() + durationDays);
+    const effectiveStatus = newEndDate < new Date() ? 'expired' : 'active';
+    const effectiveAccess = newEndDate >= new Date();
+    const amount = Number(orphanRenewal.amount ?? 0);
+
+    await this.db.transaction(async (tx: any) => {
+      const [existingEvent] = await tx
+        .select({ id: caktoImportEvents.id })
+        .from(caktoImportEvents)
+        .where(eq(caktoImportEvents.saleId, orphanRenewal.saleId))
+        .limit(1);
+
+      if (existingEvent) {
+        throw new BadRequestException('Esta venda já foi processada anteriormente.');
+      }
+
+      const [customer] = await tx
+        .insert(customers)
+        .values({
+          name: orphanRenewal.customerName,
+          email: orphanRenewal.customerEmail,
+          document: orphanRenewal.customerDocument || null,
+          status: 'active',
+          externalId: orphanRenewal.saleId,
+        })
+        .onConflictDoUpdate({
+          target: customers.email,
+          set: { updatedAt: new Date() },
+        })
+        .returning();
+
+      if (orphanRenewal.customerPhone) {
+        const [existingContact] = await tx
+          .select({ id: customerContacts.id })
+          .from(customerContacts)
+          .where(
+            and(
+              eq(customerContacts.customerId, customer.id),
+              eq(customerContacts.channel, 'phone'),
+            ),
+          )
+          .limit(1);
+
+        if (!existingContact) {
+          await tx.insert(customerContacts).values({
+            customerId: customer.id,
+            channel: 'phone',
+            identifier: orphanRenewal.customerPhone,
+          });
+        }
+      }
+
+      const [createdSubscription] = await tx.insert(subscriptions).values({
+        customerId: customer.id,
+        productId: defaultProduct.id,
+        status: effectiveStatus,
+        accessType: 'paid',
+        accessGranted: effectiveAccess,
+        startDate: paidAt,
+        endDate: newEndDate,
+        amount: amount.toFixed(2),
+        currency: 'BRL',
+        billingCycle: 'monthly',
+        externalId: orphanRenewal.saleId,
+        metadata: {
+          source: 'orphan_renewal_resolution',
+          orphanRenewal: true,
+          orphanRenewalId: orphanRenewal.id,
+          notes: dto.notes ?? null,
+          payload: orphanRenewal.payload,
+        },
+      }).returning({ id: subscriptions.id });
+
+      await tx.insert(caktoImportEvents).values({
+        saleId: orphanRenewal.saleId,
+        action: 'imported',
+        status: 'processed',
+        customerEmail: orphanRenewal.customerEmail,
+        productName: orphanRenewal.productName,
+        payload: {
+          orphanRenewalResolution: true,
+          orphanRenewalId: orphanRenewal.id,
+        },
+      });
+
+      await this.appendCaktoLineEventLog(tx, {
+        action: 'orphan_resolved',
+        saleId: orphanRenewal.saleId,
+        customerId: customer.id,
+        subscriptionId: createdSubscription.id,
+        customerEmail: orphanRenewal.customerEmail,
+        productName: orphanRenewal.productName,
+        paidAt,
+        endDate: newEndDate,
+        payload: {
+          orphanRenewalResolution: true,
+          orphanRenewalId: orphanRenewal.id,
+          adminId,
+          notes: dto.notes ?? null,
+        },
+      });
+
+      await tx
+        .update(caktoOrphanRenewals)
+        .set({
+          status: 'approved_as_adhesion',
+          resolutionAction: dto.action,
+          resolutionNotes: dto.notes ?? null,
+          resolvedBy: adminId,
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(caktoOrphanRenewals.id, orphanRenewal.id));
+    });
+
+    return { id, status: 'approved_as_adhesion' };
+  }
   async findAll(params: {
     page: number;
     limit: number;
@@ -172,362 +901,15 @@ export class CustomersService {
   // Cakto CSV/XLS import
   // ---------------------------------------------------------------------------
 
-  private parseCaktoFile(buffer: Buffer): Record<string, string>[] {
-    const workbook = XLSX.read(buffer, { type: 'buffer', raw: false, cellDates: false });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-
-    if (raw.length < 2) return [];
-
-    const headers = (raw[0] as string[]).map((h) => String(h ?? '').trim());
-    return (raw.slice(1) as string[][])
-      .filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''))
-      .map((row) => {
-        const obj: Record<string, string> = {};
-        headers.forEach((h, i) => {
-          obj[h] = String(row[i] ?? '').trim();
-        });
-        return obj;
-      });
+  async importCakto(fileBuffer: Buffer): Promise<CaktoImportSummary> {
+    return this.withCaktoImportLock(() => this.runCaktoImport(fileBuffer));
   }
 
-  async importCakto(
+  private async runCaktoImport(
     fileBuffer: Buffer,
-    productId: string,
-    billingCycle: string,
-    skipRefunded: boolean,
-    importMode: string,
-  ): Promise<{
-    total: number;
-    imported: number;
-    renewed: number;
-    skipped: number;
-    duplicates: number;
-    errors: Array<{ saleId: string; error: string }>;
-  }> {
-    // Load product
-    const [product] = await this.db
-      .select()
-      .from(products)
-      .where(eq(products.id, productId))
-      .limit(1);
-
-    if (!product) {
-      throw new NotFoundException(`Product ${productId} not found`);
-    }
-
-    let rows: Record<string, string>[];
-    try {
-      rows = this.parseCaktoFile(fileBuffer);
-    } catch {
-      throw new BadRequestException('Arquivo inválido. Envie um CSV ou XLSX exportado da Cakto.');
-    }
-
-    if (rows.length === 0) {
-      throw new BadRequestException('Arquivo vazio ou sem dados após o cabeçalho.');
-    }
-
-    // Sort by payment date ASC so we process main sales before renewals
-    rows.sort((a, b) => {
-      const da = new Date(a['Data de Pagamento'] || a['Data da Venda'] || '').getTime() || 0;
-      const db_ = new Date(b['Data de Pagamento'] || b['Data da Venda'] || '').getTime() || 0;
-      return da - db_;
-    });
-
-    const result = {
-      total: rows.length,
-      imported: 0,
-      renewed: 0,
-      skipped: 0,
-      duplicates: 0,
-      errors: [] as Array<{ saleId: string; error: string }>,
-    };
-
-    for (const row of rows) {
-      const saleId = row['ID da Venda'] ?? '';
-      try {
-        const status = (row['Status da Venda'] ?? '').toLowerCase();
-        const email = (row['Email do Cliente'] ?? '').toLowerCase().trim();
-        const name = (row['Nome do Cliente'] ?? '').trim();
-        const phone = (row['Telefone do Cliente'] ?? '').trim();
-        const document = (row['Número do Documento do Cliente'] ?? '').trim();
-        const amountRaw = (row['Valor Pago pelo Cliente'] ?? '0').replace(',', '.');
-        const method = (row['Método de Pagamento'] ?? '').trim();
-        const paidAtRaw = (row['Data de Pagamento'] ?? '').trim();
-        const refundedAtRaw = (row['Data do Reembolso'] ?? '').trim();
-        const chargebackAtRaw = (row['Data do Chargeback'] ?? '').trim();
-        const saleDateRaw = (row['Data da Venda'] ?? '').trim();
-        const saleType = importMode === 'force_renewal'
-          ? 'renewal'
-          : importMode === 'force_new'
-            ? 'main'
-            : (row['Tipo da Venda'] ?? 'main').toLowerCase().trim(); // 'main' | 'renewal' | 'upsell'
-        const parentSaleId = (row['Venda Pai'] ?? '').trim();
-
-        // ── Business rules ────────────────────────────────────────────────────
-        if (status !== 'paid') {
-          result.skipped++;
-          continue;
-        }
-
-        if (skipRefunded && (refundedAtRaw || chargebackAtRaw)) {
-          result.skipped++;
-          continue;
-        }
-
-        if (!email) {
-          result.errors.push({ saleId, error: 'E-mail do cliente ausente' });
-          continue;
-        }
-
-        if (!name) {
-          result.errors.push({ saleId, error: 'Nome do cliente ausente' });
-          continue;
-        }
-
-        // ── Parse payment date ─────────────────────────────────────────────
-        const paidAt = paidAtRaw
-          ? new Date(paidAtRaw)
-          : saleDateRaw
-            ? new Date(saleDateRaw)
-            : new Date();
-
-        if (isNaN(paidAt.getTime())) {
-          result.errors.push({ saleId, error: `Data de pagamento inválida: "${paidAtRaw}"` });
-          continue;
-        }
-
-        // ── Calculate endDate from billingCycle ────────────────────────────
-        const daysMap: Record<string, number> = {
-          monthly: 30,
-          quarterly: 90,
-          semiannual: 180,
-          yearly: 365,
-        };
-        const durationDays = daysMap[billingCycle] ?? product.durationDays ?? 30;
-        const newEndDate = new Date(paidAt);
-        newEndDate.setDate(newEndDate.getDate() + durationDays);
-
-        const amount = parseFloat(amountRaw);
-        if (isNaN(amount) || amount < 0) {
-          result.errors.push({ saleId, error: `Valor inválido: "${amountRaw}"` });
-          continue;
-        }
-
-        const caktoMeta = {
-          saleId,
-          produto: row['Produto'] ?? '',
-          oferta: row['Oferta'] ?? '',
-          metodoPagamento: method,
-          parcelas: row['Parcelas'] ?? '',
-          dataDaVenda: saleDateRaw,
-          afiliado: row['Afiliado'] ?? '',
-          reembolso: refundedAtRaw || null,
-          chargeback: chargebackAtRaw || null,
-          vendaPai: parentSaleId || null,
-          tipoVenda: saleType,
-        };
-
-        // ── Dedup: skip if this saleId was already imported ───────────────
-        if (saleId) {
-          const [existingSub] = await this.db
-            .select({ id: subscriptions.id })
-            .from(subscriptions)
-            .where(eq(subscriptions.externalId, saleId))
-            .limit(1);
-
-          if (existingSub) {
-            result.duplicates++;
-            continue;
-          }
-        }
-
-        // ── Upsert customer by email (atomic — ON CONFLICT prevents race conditions) ─
-        const [customer] = await this.db
-          .insert(customers)
-          .values({
-            name,
-            email,
-            document: document || null,
-            status: 'active',
-            externalId: saleId || null,
-          })
-          .onConflictDoUpdate({
-            target: customers.email,
-            set: { updatedAt: new Date() },
-          })
-          .returning();
-
-        if (phone) {
-          // Insert phone contact only if it doesn't already exist
-          const [existingContact] = await this.db
-            .select({ id: customerContacts.id })
-            .from(customerContacts)
-            .where(
-              and(
-                eq(customerContacts.customerId, customer.id),
-                eq(customerContacts.channel, 'phone'),
-              ),
-            )
-            .limit(1);
-          if (!existingContact) {
-            await this.db.insert(customerContacts).values({
-              customerId: customer.id,
-              channel: 'phone',
-              identifier: phone,
-            });
-          }
-        }
-
-        // ── RENEWAL: extend existing subscription ─────────────────────────
-        if (saleType === 'renewal') {
-          // Find subscription to extend: prefer via parentSaleId, fallback to customer's latest active
-          let existingSubId: string | null = null;
-
-          if (parentSaleId) {
-            const [byParent] = await this.db
-              .select({ id: subscriptions.id, endDate: subscriptions.endDate })
-              .from(subscriptions)
-              .where(eq(subscriptions.externalId, parentSaleId))
-              .limit(1);
-            if (byParent) existingSubId = byParent.id;
-          }
-
-          if (!existingSubId) {
-            // Fallback: customer's most recent subscription across ANY product.
-            // Necessary because adesão and renovação use different product IDs in Cakto,
-            // but represent the same customer access period.
-            const [byCustomer] = await this.db
-              .select({ id: subscriptions.id, endDate: subscriptions.endDate })
-              .from(subscriptions)
-              .where(eq(subscriptions.customerId, customer.id))
-              .orderBy(desc(subscriptions.createdAt))
-              .limit(1);
-            if (byCustomer) existingSubId = byCustomer.id;
-          }
-
-          // If still no subscription found and mode is force_renewal → create new one
-          // (customer may be renewing before ever having been imported as adesão)
-          if (!existingSubId) {
-            await this.db.insert(subscriptions).values({
-              customerId: customer.id,
-              productId: product.id,
-              status: 'active',
-              accessType: 'paid',
-              accessGranted: true,
-              startDate: paidAt,
-              endDate: newEndDate,
-              amount: amount.toFixed(2),
-              currency: 'BRL',
-              billingCycle,
-              externalId: saleId || null,
-              metadata: { source: 'cakto_import', cakto: caktoMeta },
-            });
-            result.imported++;
-            continue;
-          }
-
-          if (existingSubId) {
-            // Extend: new endDate = max(current endDate, paidAt) + durationDays
-            const [current] = await this.db
-              .select({ endDate: subscriptions.endDate })
-              .from(subscriptions)
-              .where(eq(subscriptions.id, existingSubId))
-              .limit(1);
-
-            const baseDate = current?.endDate && new Date(current.endDate) > paidAt
-              ? new Date(current.endDate)
-              : paidAt;
-            const extendedEnd = new Date(baseDate);
-            extendedEnd.setDate(extendedEnd.getDate() + durationDays);
-
-            await this.db
-              .update(subscriptions)
-              .set({
-                status: 'active',
-                accessGranted: true,
-                endDate: extendedEnd,
-                updatedAt: new Date(),
-                metadata: { source: 'cakto_import', cakto: caktoMeta },
-              })
-              .where(eq(subscriptions.id, existingSubId));
-
-            result.renewed++;
-            continue;
-          }
-          // If no existing subscription found, fall through and create one
-        }
-
-        // ── MAIN / UPSELL: check by email+product before creating new subscription ─
-        // Customer may already exist in DB from webhooks (no externalId set).
-        // Filter by productId to avoid extending a different product's subscription.
-        if (saleType === 'main' || saleType === 'upsell') {
-          const [existingByEmail] = await this.db
-            .select({ id: subscriptions.id, endDate: subscriptions.endDate })
-            .from(subscriptions)
-            .where(
-              and(
-                eq(subscriptions.customerId, customer.id),
-                eq(subscriptions.productId, product.id),
-              ),
-            )
-            .orderBy(desc(subscriptions.createdAt))
-            .limit(1);
-
-          if (existingByEmail) {
-            // Customer already has a subscription — extend it, stamp the externalId so future
-            // imports for this same saleId are caught by the fast dedup check above.
-            const baseDate = existingByEmail.endDate && new Date(existingByEmail.endDate) > paidAt
-              ? new Date(existingByEmail.endDate)
-              : paidAt;
-            const extendedEnd = new Date(baseDate);
-            extendedEnd.setDate(extendedEnd.getDate() + durationDays);
-
-            await this.db
-              .update(subscriptions)
-              .set({
-                status: 'active',
-                accessGranted: true,
-                endDate: extendedEnd,
-                // Stamp externalId so future imports of the same saleId are caught fast
-                externalId: saleId || null,
-                updatedAt: new Date(),
-                metadata: { source: 'cakto_import', cakto: caktoMeta },
-              })
-              .where(eq(subscriptions.id, existingByEmail.id));
-
-            result.renewed++;
-            continue;
-          }
-        }
-
-        // ── MAIN / UPSELL: create new subscription ────────────────────────
-        await this.db.insert(subscriptions).values({
-          customerId: customer.id,
-          productId: product.id,
-          status: 'active',
-          accessType: 'paid',
-          accessGranted: true,
-          startDate: paidAt,
-          endDate: newEndDate,
-          amount: amount.toFixed(2),
-          currency: 'BRL',
-          billingCycle,
-          externalId: saleId || null,
-          metadata: { source: 'cakto_import', cakto: caktoMeta },
-        });
-
-        result.imported++;
-      } catch (err) {
-        // A6: never leak raw DB error messages to the client
-        const isKnownError = err instanceof BadRequestException || err instanceof NotFoundException;
-        const safeMsg = isKnownError
-          ? (err as Error).message
-          : 'Erro interno ao processar linha';
-        result.errors.push({ saleId, error: safeMsg });
-      }
-    }
-
-    return result;
+    options?: { importId?: string },
+  ): Promise<CaktoImportSummary> {
+    const { rows, defaultProduct } = await this.prepareCaktoImport(fileBuffer);
+    return this.caktoImportExecutor.run({ rows, defaultProduct, importId: options?.importId });
   }
 }

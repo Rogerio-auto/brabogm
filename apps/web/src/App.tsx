@@ -10,6 +10,8 @@ import EventLogsPage from './pages/EventLogsPage';
 import AdminActionsPage from './pages/AdminActionsPage';
 import AffiliatesPage from './pages/AffiliatesPage';
 import SettingsPage from './pages/SettingsPage';
+import CaktoImportsPage from './pages/CaktoImportsPage';
+import OrphanRenewalsPage from './pages/OrphanRenewalsPage';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +39,8 @@ function AppRoutes() {
         <Route path="event-logs" element={<EventLogsPage />} />
         <Route path="admin-actions" element={<AdminActionsPage />} />
         <Route path="affiliates" element={<AffiliatesPage />} />
+        <Route path="cakto-imports" element={<CaktoImportsPage />} />
+        <Route path="orphan-renewals" element={<OrphanRenewalsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
