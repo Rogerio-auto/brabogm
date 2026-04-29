@@ -1,0 +1,103 @@
+import { Injectable, UnauthorizedException, Inject, OnModuleInit, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
+import { eq } from 'drizzle-orm';
+import { DATABASE_CONNECTION } from '../../database/database.constants';
+import { users } from '../../database/schema';
+
+@Injectable()
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: any,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  async onModuleInit() {
+    try {
+      await this.seedDefaultAdmin();
+    } catch (error: any) {
+      this.logger.warn('Could not seed default admin (tables may not be ready yet)', error.message);
+    }
+  }
+
+  async validateUser(email: string, password: string) {
+    const [user] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const { passwordHash: _, ...result } = user;
+    return result;
+  }
+
+  async login(user: any) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    };
+  }
+
+  async seedDefaultAdmin() {
+    const [existing] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.email, 'admin@brabogm.com'))
+      .limit(1);
+
+    if (!existing) {
+      const hash = await bcrypt.hash('admin123', 10);
+      await this.db.insert(users).values({
+        name: 'Admin',
+        email: 'admin@brabogm.com',
+        passwordHash: hash,
+        role: 'admin',
+      });
+      this.logger.log('Default admin user created (admin@brabogm.com)');
+    }
+  }
+
+  async updateProfile(userId: string, data: { name: string; email: string }) {
+    await this.db
+      .update(users)
+      .set({ name: data.name, email: data.email, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    const [updated] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const { passwordHash: _, ...result } = updated;
+    return result;
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Senha atual incorreta');
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await this.db
+      .update(users)
+      .set({ passwordHash: hash, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    return { message: 'Senha alterada com sucesso' };
+  }
+}
