@@ -9,7 +9,7 @@ import {
   eventLogs,
 } from '../../database/schema';
 import { getCaktoProductRule } from './cakto-product-mapping';
-import { CaktoSaleRow } from './cakto-file-parser';
+import { CaktoSaleRow, parseCaktoDate } from './cakto-file-parser';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 export type CaktoImportError = { saleId: string; error: string };
@@ -180,11 +180,7 @@ export class CaktoImportExecutor {
       throw new BadRequestException('Nome do cliente ausente');
     }
 
-    const paidAt = paidAtRaw
-      ? new Date(paidAtRaw)
-      : saleDateRaw
-        ? new Date(saleDateRaw)
-        : new Date();
+    const paidAt = parseCaktoDate(paidAtRaw) ?? parseCaktoDate(saleDateRaw) ?? new Date();
 
     if (isNaN(paidAt.getTime())) {
       throw new BadRequestException(`Data de pagamento inválida: "${paidAtRaw}"`);
@@ -289,9 +285,7 @@ export class CaktoImportExecutor {
           .limit(1);
 
         if (subscriptionToCancel && subscriptionToCancel.status !== 'cancelled') {
-          const cancelledAt = refundedAtRaw
-            ? new Date(refundedAtRaw)
-            : new Date(chargebackAtRaw!);
+          const cancelledAt = parseCaktoDate(refundedAtRaw) ?? parseCaktoDate(chargebackAtRaw!) ?? new Date();
 
           await tx
             .update(subscriptions)

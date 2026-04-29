@@ -139,6 +139,24 @@ export type ParseCaktoFileResult = {
   malformed: CaktoMalformedRow[];
 };
 
+/**
+ * Parseia datas nos formatos:
+ * - dd/mm/yyyy HH:mm:ss  (Excel BR)
+ * - dd/mm/yyyy
+ * - ISO e outros formatos suportados nativamente por new Date()
+ */
+export function parseCaktoDate(str: string): Date | null {
+  if (!str?.trim()) return null;
+  const brMatch = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (brMatch) {
+    const [, day, month, year, hours = '0', minutes = '0', seconds = '0'] = brMatch;
+    const d = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(str);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 const caktoRowSchema = z.object({
   'ID da Venda': z.string().trim().min(1, 'ID da Venda é obrigatório.'),
   'Status da Venda': z.string().trim().min(1, 'Status da Venda é obrigatório.'),
@@ -161,7 +179,7 @@ const caktoRowSchema = z.object({
   const status = row['Status da Venda'].trim().toLowerCase();
   const paidAtCandidate = row['Data de Pagamento'].trim() || row['Data da Venda'].trim();
 
-  if (status === 'paid' && (!paidAtCandidate || Number.isNaN(new Date(paidAtCandidate).getTime()))) {
+  if (status === 'paid' && (!paidAtCandidate || !parseCaktoDate(paidAtCandidate))) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['Data de Pagamento'],

@@ -1,4 +1,4 @@
-import { CaktoSaleRow } from './cakto-file-parser';
+import { CaktoSaleRow, parseCaktoDate } from './cakto-file-parser';
 import { getCaktoProductRule } from './cakto-product-mapping';
 
 export type CaktoPlanError = {
@@ -109,11 +109,7 @@ export async function planCaktoImportPreview({
         continue;
       }
 
-      const paidAt = paidAtRaw
-        ? new Date(paidAtRaw)
-        : saleDateRaw
-          ? new Date(saleDateRaw)
-          : new Date();
+      const paidAt = parseCaktoDate(paidAtRaw) ?? parseCaktoDate(saleDateRaw) ?? new Date();
 
       if (Number.isNaN(paidAt.getTime())) {
         summary.errors.push({ saleId, error: `Data de pagamento inválida: "${paidAtRaw}"` });
