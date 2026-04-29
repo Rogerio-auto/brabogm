@@ -28,6 +28,20 @@ export class IntegrationsService {
     return { received: true, timestamp: new Date().toISOString() };
   }
 
+  async cancelWrongProductSubscriptionsFromN8n(secret: string, body: { allowedProductName: string; dryRun?: boolean }) {
+    this.ensureValidN8nSecret(secret);
+
+    const result = await this.subscriptionsService.cancelSubscriptionsWithWrongProduct({
+      allowedProductName: body.allowedProductName,
+      dryRun: body.dryRun ?? false,
+      triggeredBy: 'integrations.n8n',
+    });
+
+    this.logger.log(`Cancel wrong product subs via n8n: cancelled=${result.cancelled} dryRun=${result.dryRun}`);
+
+    return result;
+  }
+
   async expireOverdueSubscriptionsFromN8n(secret: string) {
     this.ensureValidN8nSecret(secret);
 

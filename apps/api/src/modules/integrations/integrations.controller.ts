@@ -30,4 +30,14 @@ export class IntegrationsController {
   async expireOverdueSubscriptions(@Headers('x-n8n-secret') secret: string) {
     return this.integrationsService.expireOverdueSubscriptionsFromN8n(secret);
   }
+
+  @Post('n8n/subscriptions/cancel-wrong-product')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Cancel active subscriptions that belong to a product other than the allowed one' })
+  async cancelWrongProductSubscriptions(
+    @Headers('x-n8n-secret') secret: string,
+    @Body() body: { allowedProductName: string; dryRun?: boolean },
+  ) {
+    return this.integrationsService.cancelWrongProductSubscriptionsFromN8n(secret, body);
+  }
 }
